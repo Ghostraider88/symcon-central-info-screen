@@ -10,6 +10,8 @@ class HomeScreen extends IPSModuleStrict
     private const TREND_FALLBACK_SECONDS = 6 * 3600;
     private const TREND_PRIMARY_THRESHOLD = 0.8;
     private const TREND_FALLBACK_THRESHOLD = 2.0;
+    private const BODY_PADDING_WITH_TITLE = '35px';
+    private const BODY_PADDING_WITHOUT_TITLE = '16px';
 
     private array $trendCache = [];
     private array $configurationErrors = [];
@@ -205,7 +207,9 @@ class HomeScreen extends IPSModuleStrict
     private function RenderTile(string $content, string $footer): string
     {
         $safeFooter = $this->EscapeHtml($footer);
-        $bodyTopPadding = $this->ReadPropertyBoolean('HideTitle') ? '0' : '35px';
+        $bodyTopPadding = $this->ReadPropertyBoolean('HideTitle')
+            ? self::BODY_PADDING_WITHOUT_TITLE
+            : self::BODY_PADDING_WITH_TITLE;
 
         return <<<HTML
 <meta name="viewport" content="width=device-width,initial-scale=1">
