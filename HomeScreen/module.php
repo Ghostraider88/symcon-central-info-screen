@@ -786,14 +786,21 @@ HTML;
         $key = $listKey . '.' . $field;
 
         $booleanFields = [
-            'Raeume.Geraet1ID', 'Raeume.Geraet2ID', 'Raeume.Geraet3ID', 'Raeume.Geraet4ID',
             'Fahrzeuge.ChargingID',
             'KlimaGeraete.AktivID',
             'Bewaesserung.AktivID',
             'Waermepumpen.KompressorID', 'Waermepumpen.HeizstabID',
         ];
         if (in_array($key, $booleanFields, true)) {
+            return [0, 1];
+        }
+        if (in_array($key, [
+            'Raeume.Geraet1ID', 'Raeume.Geraet2ID', 'Raeume.Geraet3ID', 'Raeume.Geraet4ID',
+        ], true)) {
             return [0];
+        }
+        if ($key === 'Lueftungsanlagen.LuefterID') {
+            return [0, 1, 2, 3];
         }
 
         $numericFields = [
@@ -802,15 +809,33 @@ HTML;
             'EnergieKacheln.SolarID', 'EnergieKacheln.VerbrauchID', 'EnergieKacheln.NetzID', 'EnergieKacheln.BatterieID',
             'KlimaGeraete.TempID', 'KlimaGeraete.SollTempID',
             'Bewaesserung.LaufzeitID', 'Bewaesserung.BodenID', 'Bewaesserung.BedarfID', 'Bewaesserung.TagesRestID',
-            'Lueftungsanlagen.LuefterID', 'Lueftungsanlagen.FrischluftID', 'Lueftungsanlagen.ZuluftID',
+            'Lueftungsanlagen.FrischluftID', 'Lueftungsanlagen.ZuluftID',
             'Waermepumpen.TempMitteID', 'Waermepumpen.TempObenID',
         ];
         return in_array($key, $numericFields, true) ? [1, 2] : [];
     }
 
+    private function IsEmptyVariableSelection(mixed $rawID): bool
+    {
+        if ($rawID === null || $rawID === '') {
+            return true;
+        }
+        if (!is_numeric($rawID)) {
+            return false;
+        }
+
+        $id = (int)$rawID;
+        if ($id === 0) {
+            return true;
+        }
+
+        // Ältere SelectVariable-Konfigurationen können „Kein(e)“ als ID 1 speichern.
+        return $id === 1 && !IPS_VariableExists(1);
+    }
+
     private function ValidateVariableID(array &$errors, string $context, mixed $rawID, array $expectedTypes = []): void
     {
-        if ($rawID === null || $rawID === '' || (int)$rawID === 0) {
+        if ($this->IsEmptyVariableSelection($rawID)) {
             return;
         }
 
@@ -1864,20 +1889,29 @@ HTML;
         $zuluftID      = (int)($item['ZuluftID']      ?? 0);
         $betriebsartID = (int)($item['BetriebsartID'] ?? 0);
 
-        $luefter     = ($luefterID > 0     && IPS_VariableExists($luefterID))     ? (int)GetValue($luefterID)                                   : null;
+        $luefterDisplay = null;
+        $isActive = false;
+        if ($luefterID > 0 && IPS_VariableExists($luefterID)) {
+            $rawLuefter = GetValue($luefterID);
+            $luefterDisplay = $this->EscapeHtml(GetValueFormatted($luefterID));
+            if (is_numeric($rawLuefter)) {
+                $isActive = (float)$rawLuefter > 0;
+            } else {
+                $isActive = !in_array(strtolower(trim((string)$rawLuefter)), ['', '0', 'aus', 'off', 'false', 'inaktiv'], true);
+            }
+        }
         $modus       = ($lueftModusID > 0  && IPS_VariableExists($lueftModusID))  ? $this->EscapeHtml(GetValueFormatted($lueftModusID))           : null;
         $frischluft  = ($frischluftID > 0  && IPS_VariableExists($frischluftID))  ? round((float)GetValue($frischluftID), 1)                     : null;
         $zuluft      = ($zuluftID > 0      && IPS_VariableExists($zuluftID))      ? round((float)GetValue($zuluftID), 1)                         : null;
         $betriebsart = ($betriebsartID > 0 && IPS_VariableExists($betriebsartID)) ? $this->EscapeHtml(GetValueFormatted($betriebsartID))          : null;
 
-        $isActive   = $luefter !== null && $luefter > 0;
         $stateClass = $isActive ? ' s-active' : '';
         $fanCls     = $isActive ? 'ico-active' : 'ico-muted';
 
         $html  = "<div class='card{$stateClass}'>";
         $html .= "<div class='c-head'><span class='c-name'>{$name}</span>";
-        if ($luefter !== null) {
-            $html .= "<span class='c-temp'><i class='fa-solid fa-fan {$fanCls}'></i> Stufe {$luefter}</span>";
+        if ($luefterDisplay !== null) {
+            $html .= "<span class='c-temp'><i class='fa-solid fa-fan {$fanCls}'></i> Stufe {$luefterDisplay}</span>";
         }
         $html .= "</div>";
 
