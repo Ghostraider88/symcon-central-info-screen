@@ -2,7 +2,7 @@
 
 Visualisierungs-Modul für **IP-Symcon**, das einen kompakten Überblick über das gesamte Smart Home als Kachel-Übersicht darstellt: Räume, E-Autos, Solar-/Energiestatus, Klima und Bewässerung – gruppiert nach Stockwerken bzw. Bereichen.
 
-[![Version](https://img.shields.io/badge/Version-1.0.2-blue)](https://github.com/Ghostraider88/Symcon-Central-Info-Screen/releases)
+[![Version](https://img.shields.io/badge/Version-1.0.3-blue)](https://github.com/Ghostraider88/Symcon-Central-Info-Screen/releases)
 [![Lizenz](https://img.shields.io/badge/Lizenz-MIT-green)](LICENSE)
 [![IP-Symcon](https://img.shields.io/badge/IP--Symcon-%E2%89%A5%208.2-orange)](https://www.symcon.de)
 
@@ -35,7 +35,7 @@ Visualisierungs-Modul für **IP-Symcon**, das einen kompakten Überblick über d
 - **Temperatur-Trend-Pfeil** (steigend / fallend / stabil) aus der Archive-Control-Historie
 - **Bereich-/Stockwerk-Header** mit aggregierten Statistiken (Licht an, Fenster offen, Rolladen)
 - **Globale Status-Leiste** als Schnellübersicht (Lichter, Fenster, Temperatur, Luftqualität)
-- Farbcodierte Kartenränder je Zustand · Klickbare Kacheln für Navigation · 5-Minuten-Aktualisierung + sofort bei Variablenänderungen
+- Farbcodierte Kartenränder je Zustand · Klickbare Kacheln für Navigation · konfigurierbare Aktualisierung + sofortige Teilaktualisierung bei Variablenänderungen
 
 ---
 
@@ -162,7 +162,8 @@ Der Trend-Pfeil erscheint in: Raum-Kacheln (Header + Temperatur-Slot) · Klima-K
 
 - **Kartenrand-Farben**: rot = Fenster offen · orange = Licht an · blau = Fahrzeug lädt · grün = Bewässerung aktiv
 - **Navigation**: Jede Kachel und jeder Bereich-Header kann mit einem IPS-Objekt verlinkt werden — Klick öffnet das Objekt in der Symcon-Oberfläche
-- **Aktualisierung**: Konfigurierbares Intervall (Standard: 5 Minuten) + verzögerte Aktualisierung bei Änderung einer registrierten Variable
+- **Aktualisierung**: Konfigurierbares Intervall (Standard: 5 Minuten) für die Zeitangabe + verzögerte Teilaktualisierung bei Änderung einer registrierten Variable
+- **Mobile Performance**: Konfiguration, Variablenwerte und Temperaturtrend-Abfragen werden im Modul zwischengespeichert; vollständiges HTML wird nur beim initialen Laden oder nach einer Konfigurationsänderung übertragen
 - **Symcon-Themes**: Das Modul nutzt die CSS-Variablen `--accent-color`, `--content-color` und `--card-color` und passt sich automatisch dem gewählten Theme an
 
 ---

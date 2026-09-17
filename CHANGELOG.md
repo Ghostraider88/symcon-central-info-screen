@@ -3,6 +3,16 @@
 Alle wesentlichen Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 
+## [1.0.3] – 2026-09-17
+
+### Geändert
+- Teilaktualisierungen für HTML-Kacheln eingeführt: Variablenänderungen ersetzen nur den betroffenen Wetter-, Status- oder Bereichsteil
+- Konfigurationslisten, Variablenwerte und formatierte Werte im Renderpfad gecacht
+- Konfigurationsvalidierung aus wiederkehrenden Renderläufen entfernt und auf Konfigurationsänderungen begrenzt
+- Temperaturtrend-Abfragen mit fünfminütigem Cache und sofortiger Invalidierung bei Sensoränderung versehen
+- Rückgabewert von UpdateVisualizationValue geprüft, ohne normale Verbindungszustände ins globale Log zu schreiben
+- Nicht benötigte Poppins-Italic-Schriftdefinition entfernt und font-display: swap ergänzt
+
 ## [1.0.2] – 2026-06-24
 
 ### Geändert

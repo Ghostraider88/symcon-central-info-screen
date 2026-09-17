@@ -9,7 +9,7 @@ Visualisierungs-Kachel für IP-Symcon ≥ 8.2 — zeigt Räume, E-Autos, Energie
 | Modul-GUID | `{D2E7F94A-3B16-4C8E-A591-7F0D2B3E5A8C}` |
 | Präfix | `HomeScreen` |
 | Typ | Visualisierung (Modultyp 3, Tile-Typ 1) |
-| Version | 1.0.2 |
+| Version | 1.0.3 |
 
 ## Konfiguration
 
@@ -28,8 +28,11 @@ Die Einstellungen erfolgen über die Instanz-Konfiguration mit getrennten Panels
 
 Ausführliche Dokumentation: [README im Repository-Root](../README.md)
 
+Die initiale Kachel wird vollständig aufgebaut. Nachfolgende Variablenänderungen aktualisieren nur den betroffenen Wetter-, Status- oder Bereichsteil, um die Übertragung und das Rendering auf mobilen Geräten zu reduzieren. Das konfigurierbare Intervall hält die Zeitangabe aktuell; die eigentlichen Werte werden ereignisgesteuert aktualisiert.
+
 ## Öffentliche Funktionen
 
 | Funktion | Beschreibung |
 |---|---|
-| `HomeScreen_Update($id)` | Sofortige Aktualisierung der Kachel-Ansicht |
+| `HomeScreen_Update($id)` | Interne Teilaktualisierung nach einer Variablenänderung |
+| `HomeScreen_ForceUpdate($id)` | Manuelle Aktualisierung aller dynamischen Kachelbereiche |
