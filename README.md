@@ -29,6 +29,8 @@ Visualisierungs-Modul für **IP-Symcon**, das einen kompakten Überblick über d
 - **Energie/Solar-Kacheln**: Solarproduktion, Hausverbrauch, Netzleistung (Bezug rot / Einspeisung grün), Batterie-SoC
 - **Klima/Thermostat-Kacheln**: Ist-/Solltemperatur, Betriebsmodus, Ventil-/Gebläsestellung
 - **Bewässerungs-Kacheln**: Aktivstatus, Restlaufzeit, nächster Start, Bodenfeuchte
+- **Lüftungs-Kacheln**: Lüfterstufe, Betriebsart, Frisch-/Zulufttemperatur
+- **Warmwasser-Wärmepumpen**: Temperaturen sowie Kompressor- und Heizstabstatus
 - **Außen-Wetterbar** mit Temperaturthema, Komfortlabel, Taupunkt sowie Tages-Tiefst-/Höchstwert
 - **Temperatur-Trend-Pfeil** (steigend / fallend / stabil) aus der Archive-Control-Historie
 - **Bereich-/Stockwerk-Header** mit aggregierten Statistiken (Licht an, Fenster offen, Rolladen)
@@ -67,7 +69,7 @@ Visualisierungs-Modul für **IP-Symcon**, das einen kompakten Überblick über d
 
 ## 4. Einrichtung
 
-Die Konfiguration erfolgt in der Instanz über getrennte **Expansion-Panels** pro Kacheltyp. Jede Liste enthält eine `Position`-Spalte zur Reihenfolgen-Steuerung – kleinere Zahlen erscheinen zuerst.
+Die Konfiguration erfolgt in der Instanz über getrennte **Expansion-Panels** pro Kacheltyp. Im Panel **Anzeige / Grenzwerte** lassen sich Aktualisierungsintervall (Standard: 5 Minuten), Temperatur-, Luftfeuchte-, CO₂- und Bodenfeuchte-Warnwerte anpassen. Jede Liste enthält eine `Position`-Spalte zur Reihenfolgen-Steuerung – kleinere Zahlen erscheinen zuerst.
 
 ### 4.1 Außen / Wetter
 
@@ -93,7 +95,7 @@ Pro Raum konfigurierbar:
   - Standardwerte (rückwärtskompatibel): `licht`, `fenster`, `hum`, `co2`
 - **Gerät 1–4**: Variable + Anzeige-Label pro Gerät
 
-### 4.4 Fahrzeuge, Energie, Klima, Bewässerung
+### 4.4 Fahrzeuge, Energie, Klima, Bewässerung, Lüftung, Wärmepumpen
 
 Jeder Typ hat eine eigene Liste mit typspezifischen Variablen — siehe [Abschnitt 5](#5-kachel-typen-im-detail).
 
@@ -127,7 +129,7 @@ Jeder Typ hat eine eigene Liste mit typspezifischen Variablen — siehe [Abschni
 | Ist-Temperatur | Erscheint im Karten-Header mit Trend-Pfeil |
 | Soll-Temperatur | Darunter als „Soll: X°“ |
 | Modus | Text via `GetValueFormatted` (z. B. „Heizen“, „Kühlen“) |
-| Ventil/Gebläse % | Ab 60 % orange hervorgehoben |
+| Ventil/Gebläse % | Wird formatiert über `GetValueFormatted()` angezeigt |
 
 ### Bewässerung
 
@@ -136,7 +138,7 @@ Jeder Typ hat eine eigene Liste mit typspezifischen Variablen — siehe [Abschni
 | Aktiv (Bool) | Karten-Rand wird grün |
 | Restlaufzeit (min) | Wird als „Xh Ymin“ dargestellt |
 | Nächster Start | Text oder Timestamp via `GetValueFormatted` |
-| Bodenfeuchte (%) | Unter 30 % orange hervorgehoben |
+| Bodenfeuchte (%) | Unter dem konfigurierbaren Warnwert orange hervorgehoben |
 
 ---
 
@@ -146,11 +148,11 @@ Wenn eine Temperatur-Variable über die **Archive-Control** aufgezeichnet wird, 
 
 | Symbol | Bedeutung | Bedingung |
 |---|---|---|
-| ↗ | Steigend | Delta ≥ +0,4 °C |
-| ↘ | Fallend | Delta ≤ −0,4 °C |
-| → | Stabil | Delta < ±0,4 °C |
+| ↗ | Steigend | Delta ≥ +0,8 °C |
+| ↘ | Fallend | Delta ≤ −0,8 °C |
+| → | Stabil | Delta < ±0,8 °C |
 
-Das Modul wertet zunächst die letzten **45 Minuten** aus. Bei Sensoren die nur bei Änderung loggen (und daher 0 Einträge in 45 Min liefern), wird automatisch auf ein **4-Stunden-Fenster** zurückgegriffen. Gibt es auch dort weniger als 2 Werte, wird der Stabil-Pfeil angezeigt.
+Das Modul wertet zunächst die letzten **2 Stunden** aus. Bei Sensoren, die nur bei Änderung loggen und dort weniger als zwei Werte liefern, wird automatisch auf ein **6-Stunden-Fenster** mit einer Schwelle von ±2,0 °C zurückgegriffen. Gibt es auch dort weniger als zwei Werte, wird der Stabil-Pfeil angezeigt.
 
 Der Trend-Pfeil erscheint in: Raum-Kacheln (Header + Temperatur-Slot) · Klima-Kacheln · Außen-Wetterbar.
 
@@ -160,7 +162,7 @@ Der Trend-Pfeil erscheint in: Raum-Kacheln (Header + Temperatur-Slot) · Klima-K
 
 - **Kartenrand-Farben**: rot = Fenster offen · orange = Licht an · blau = Fahrzeug lädt · grün = Bewässerung aktiv
 - **Navigation**: Jede Kachel und jeder Bereich-Header kann mit einem IPS-Objekt verlinkt werden — Klick öffnet das Objekt in der Symcon-Oberfläche
-- **Aktualisierung**: Alle 5 Minuten per Timer + sofort bei Änderung einer registrierten Variable
+- **Aktualisierung**: Konfigurierbares Intervall (Standard: 5 Minuten) + verzögerte Aktualisierung bei Änderung einer registrierten Variable
 - **Symcon-Themes**: Das Modul nutzt die CSS-Variablen `--accent-color`, `--content-color` und `--card-color` und passt sich automatisch dem gewählten Theme an
 
 ---

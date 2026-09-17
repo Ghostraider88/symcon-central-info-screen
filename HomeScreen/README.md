@@ -1,6 +1,6 @@
 # HomeScreen
 
-Visualisierungs-Kachel für IP-Symcon ≥ 8.1 — zeigt Räume, E-Autos, Energie, Klima und Bewässerung als kompakte Kachel-Übersicht, gruppiert nach Stockwerken/Bereichen.
+Visualisierungs-Kachel für IP-Symcon ≥ 8.2 — zeigt Räume, E-Autos, Energie, Klima, Bewässerung, Lüftungsanlagen und Warmwasser-Wärmepumpen als kompakte Kachel-Übersicht, gruppiert nach Stockwerken/Bereichen.
 
 ## Modul-Informationen
 
@@ -8,13 +8,14 @@ Visualisierungs-Kachel für IP-Symcon ≥ 8.1 — zeigt Räume, E-Autos, Energie
 |---|---|
 | Modul-GUID | `{D2E7F94A-3B16-4C8E-A591-7F0D2B3E5A8C}` |
 | Präfix | `HomeScreen` |
-| Typ | Visualisierung (Typ 3) |
-| Version | 1.0.0 |
+| Typ | Visualisierung (Modultyp 3, Tile-Typ 1) |
+| Version | 1.0.2 |
 
 ## Konfiguration
 
 Die Einstellungen erfolgen über die Instanz-Konfiguration mit getrennten Panels pro Kacheltyp:
 
+- **Anzeige / Grenzwerte** – Aktualisierungsintervall und Warnwerte für Temperatur, Luftfeuchte, CO₂ und Bodenfeuchte
 - **Außen / Wetter** – Außentemperatur, Luftfeuchte, Min/Max
 - **Bereiche / Stockwerke** – Gruppierung mit Aggregat-Variablen
 - **Räume** – Sensoren, 4 Anzeige-Slots, bis zu 4 schaltbare Geräte
@@ -22,6 +23,8 @@ Die Einstellungen erfolgen über die Instanz-Konfiguration mit getrennten Panels
 - **Energie / Solar** – Produktion, Verbrauch, Netz, Batterie
 - **Klima / Thermostat** – Ist-/Solltemperatur, Modus, Ventil
 - **Bewässerung** – Aktivstatus, Laufzeit, Bodenfeuchte
+- **Lüftungsanlagen** – Lüfterstufe, Betriebsart, Frisch-/Zulufttemperatur
+- **Warmwasser-Wärmepumpen** – Temperaturen, Kompressor, Heizstab
 
 Ausführliche Dokumentation: [README im Repository-Root](../README.md)
 

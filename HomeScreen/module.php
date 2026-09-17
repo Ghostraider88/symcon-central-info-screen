@@ -5,6 +5,15 @@ declare(strict_types=1);
 class HomeScreen extends IPSModuleStrict
 {
     private const MODULE_VERSION = '1.0.2';
+    private const UPDATE_DEBOUNCE_MS = 250;
+    private const TREND_PRIMARY_SECONDS = 2 * 3600;
+    private const TREND_FALLBACK_SECONDS = 6 * 3600;
+    private const TREND_PRIMARY_THRESHOLD = 0.8;
+    private const TREND_FALLBACK_THRESHOLD = 2.0;
+
+    private array $trendCache = [];
+    private array $configurationErrors = [];
+    private ?int $archiveID = null;
 
     // -------------------------------------------------------------------------
     // Lifecycle
@@ -35,15 +44,26 @@ class HomeScreen extends IPSModuleStrict
         $this->RegisterPropertyInteger('WetterwarnungID', 0);
         $this->RegisterPropertyInteger('UVID',           0);
         $this->RegisterPropertyInteger('OutdoorLinkID',   0);
+        $this->RegisterPropertyInteger('RefreshIntervalMinutes', 5);
+        $this->RegisterPropertyFloat('TempWarnMin', 18.0);
+        $this->RegisterPropertyFloat('TempWarnMax', 25.0);
+        $this->RegisterPropertyFloat('HumidityWarnMin', 30.0);
+        $this->RegisterPropertyFloat('HumidityWarnMax', 60.0);
+        $this->RegisterPropertyInteger('CO2WarnLevel', 1000);
+        $this->RegisterPropertyInteger('CO2AlarmLevel', 1400);
+        $this->RegisterPropertyInteger('SoilWarnLevel', 30);
 
         $this->SetVisualizationType(1);
 
         $this->RegisterTimer('RefreshTimer', 0, 'HomeScreen_Update($_IPS[\'TARGET\']);');
+        $this->RegisterTimer('DebounceTimer', 0, 'HomeScreen_Update($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges(): void
     {
         parent::ApplyChanges();
+
+        $this->configurationErrors = $this->ValidateConfiguration();
 
         foreach ($this->GetReferenceList() as $ref) {
             $this->UnregisterReference($ref);
@@ -56,7 +76,7 @@ class HomeScreen extends IPSModuleStrict
 
         $varIDs = [];
 
-        $bereiche = json_decode($this->ReadPropertyString('Bereiche'), true) ?? [];
+        $bereiche = $this->ReadJsonList('Bereiche');
         foreach ($bereiche as $b) {
             $linkID = (int)($b['LinkID'] ?? 0);
             if ($linkID > 0) {
@@ -71,7 +91,7 @@ class HomeScreen extends IPSModuleStrict
             }
         }
 
-        $raeume = json_decode($this->ReadPropertyString('Raeume'), true) ?? [];
+        $raeume = $this->ReadJsonList('Raeume');
         foreach ($raeume as $raum) {
             $linkID = (int)($raum['LinkID'] ?? 0);
             if ($linkID > 0) {
@@ -101,7 +121,7 @@ class HomeScreen extends IPSModuleStrict
         }
 
         foreach (['Fahrzeuge', 'EnergieKacheln', 'KlimaGeraete', 'Bewaesserung', 'Lueftungsanlagen', 'Waermepumpen'] as $listKey) {
-            $items = json_decode($this->ReadPropertyString($listKey), true) ?? [];
+            $items = $this->ReadJsonList($listKey);
             foreach ($items as $item) {
                 $linkID = (int)($item['LinkID'] ?? 0);
                 if ($linkID > 0) {
@@ -126,7 +146,9 @@ class HomeScreen extends IPSModuleStrict
             $this->RegisterMessage($id, VM_UPDATE);
         }
 
-        $this->SetTimerInterval('RefreshTimer', 5 * 60 * 1000);
+        $refreshMinutes = max(1, $this->ReadPropertyInteger('RefreshIntervalMinutes'));
+        $this->SetTimerInterval('RefreshTimer', $refreshMinutes * 60 * 1000);
+        $this->SetTimerInterval('DebounceTimer', 0);
 
         $this->UpdateVisualizationValue($this->GetUpdatePayload());
     }
@@ -134,12 +156,13 @@ class HomeScreen extends IPSModuleStrict
     public function MessageSink(int $TimeStamp, int $SenderID, int $Message, array $Data): void
     {
         if ($Message === VM_UPDATE) {
-            $this->UpdateVisualizationValue($this->GetUpdatePayload());
+            $this->SetTimerInterval('DebounceTimer', self::UPDATE_DEBOUNCE_MS);
         }
     }
 
     public function Update(): void
     {
+        $this->SetTimerInterval('DebounceTimer', 0);
         $this->UpdateVisualizationValue($this->GetUpdatePayload());
     }
 
@@ -149,8 +172,10 @@ class HomeScreen extends IPSModuleStrict
 
     public function GetVisualizationTile(): string
     {
-        $bereiche = json_decode($this->ReadPropertyString('Bereiche'), true) ?? [];
-        $raeume   = json_decode($this->ReadPropertyString('Raeume'), true) ?? [];
+        $this->trendCache = [];
+        $this->configurationErrors = $this->ValidateConfiguration();
+        $bereiche = $this->ReadJsonList('Bereiche');
+        $raeume   = $this->ReadJsonList('Raeume');
 
         $content = $this->BuildContent($bereiche, $raeume);
         $footer  = 'v' . self::MODULE_VERSION . ' · Aktualisiert: ' . date('d.m.Y H:i:s');
@@ -160,18 +185,20 @@ class HomeScreen extends IPSModuleStrict
 
     private function GetUpdatePayload(): string
     {
-        $bereiche = json_decode($this->ReadPropertyString('Bereiche'), true) ?? [];
-        $raeume   = json_decode($this->ReadPropertyString('Raeume'), true) ?? [];
+        $this->trendCache = [];
+        $this->configurationErrors = $this->ValidateConfiguration();
+        $bereiche = $this->ReadJsonList('Bereiche');
+        $raeume   = $this->ReadJsonList('Raeume');
 
         return json_encode([
             'content' => $this->BuildContent($bereiche, $raeume),
             'footer'  => 'v' . self::MODULE_VERSION . ' · Aktualisiert: ' . date('d.m.Y H:i:s'),
-        ]);
+        ], JSON_THROW_ON_ERROR);
     }
 
     private function RenderTile(string $content, string $footer): string
     {
-        $safeFooter = htmlspecialchars($footer);
+        $safeFooter = $this->EscapeHtml($footer);
 
         return <<<HTML
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -265,6 +292,9 @@ class HomeScreen extends IPSModuleStrict
   .stat-al{display:flex;align-items:center;gap:3px;}
   .grp-ok{color:#4caf50;font-size:0.80em;font-weight:600;}
   .empty{color:var(--text-muted);padding:10px;font-size:0.9em;}
+  .config-error{color:#c62828;background:rgba(244,67,54,0.10);border:1px solid rgba(244,67,54,0.30);border-left:3px solid #e53935;border-radius:5px;padding:6px 9px;margin-bottom:7px;font-size:0.82em;}
+  .config-error ul{margin-left:18px;}
+  .grp-alarm{color:#e53935;font-size:0.80em;font-weight:600;}
   .footer{margin-top:8px;font-size:0.67em;color:var(--footer);text-align:right;}
   .out-bar.clickable{cursor:pointer;}.out-bar.clickable:hover{filter:brightness(0.96);}
   .out-warn{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;}
@@ -328,9 +358,15 @@ class HomeScreen extends IPSModuleStrict
 <div id="cis-footer" class="footer">{$safeFooter}</div>
 <script>
 function handleMessage(data){
-  var d=JSON.parse(data);
-  if(d.content!==undefined)document.getElementById('cis-content').innerHTML=d.content;
-  if(d.footer!==undefined)document.getElementById('cis-footer').textContent=d.footer;
+  try {
+    var d=typeof data==='string' ? JSON.parse(data) : data;
+    var content=document.getElementById('cis-content');
+    var footer=document.getElementById('cis-footer');
+    if(d && d.content!==undefined && content)content.innerHTML=d.content;
+    if(d && d.footer!==undefined && footer)footer.textContent=d.footer;
+  } catch(e) {
+    console.warn('Central Info Screen: ungültige Aktualisierungsdaten', e);
+  }
 }
 </script>
 HTML;
@@ -342,7 +378,7 @@ HTML;
 
     public function GetConfigurationForm(): string
     {
-        $bereiche = json_decode($this->ReadPropertyString('Bereiche'), true) ?? [];
+        $bereiche = $this->ReadJsonList('Bereiche');
         $this->SortByPosition($bereiche);
         $bereichOptionen = [['caption' => '– kein Bereich –', 'value' => '']];
         foreach ($bereiche as $b) {
@@ -367,6 +403,20 @@ HTML;
 
         return json_encode([
             'elements' => [
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Anzeige / Grenzwerte',
+                    'items'   => [
+                        ['type' => 'NumberSpinner', 'name' => 'RefreshIntervalMinutes', 'caption' => 'Aktualisierungsintervall (Minuten)', 'minimum' => 1, 'maximum' => 60],
+                        ['type' => 'NumberSpinner', 'name' => 'TempWarnMin', 'caption' => 'Temperatur-Warnung ab (°C)', 'minimum' => -50, 'maximum' => 80, 'digits' => 1],
+                        ['type' => 'NumberSpinner', 'name' => 'TempWarnMax', 'caption' => 'Temperatur-Warnung über (°C)', 'minimum' => -50, 'maximum' => 80, 'digits' => 1],
+                        ['type' => 'NumberSpinner', 'name' => 'HumidityWarnMin', 'caption' => 'Luftfeuchte-Warnung unter (%)', 'minimum' => 0, 'maximum' => 100, 'digits' => 1],
+                        ['type' => 'NumberSpinner', 'name' => 'HumidityWarnMax', 'caption' => 'Luftfeuchte-Warnung über (%)', 'minimum' => 0, 'maximum' => 100, 'digits' => 1],
+                        ['type' => 'NumberSpinner', 'name' => 'CO2WarnLevel', 'caption' => 'CO₂-Warnung ab (ppm)', 'minimum' => 0, 'maximum' => 10000],
+                        ['type' => 'NumberSpinner', 'name' => 'CO2AlarmLevel', 'caption' => 'CO₂-Alarm über (ppm)', 'minimum' => 0, 'maximum' => 10000],
+                        ['type' => 'NumberSpinner', 'name' => 'SoilWarnLevel', 'caption' => 'Bodenfeuchte-Warnung unter (%)', 'minimum' => 0, 'maximum' => 100],
+                    ],
+                ],
                 [
                     'type'    => 'ExpansionPanel',
                     'caption' => 'Außen / Wetter',
@@ -596,6 +646,257 @@ HTML;
     // HTML-Generierung
     // -------------------------------------------------------------------------
 
+    private function EscapeHtml(mixed $value): string
+    {
+        return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    private function AddConfigurationError(string $message): void
+    {
+        if (!in_array($message, $this->configurationErrors, true)) {
+            $this->configurationErrors[] = $message;
+        }
+    }
+
+    private function ReadJsonList(string $property): array
+    {
+        try {
+            $value = json_decode(
+                $this->ReadPropertyString($property),
+                true,
+                512,
+                JSON_THROW_ON_ERROR
+            );
+        } catch (Throwable $exception) {
+            $this->AddConfigurationError($property . ': ungültiges JSON (' . $exception->getMessage() . ')');
+            return [];
+        }
+
+        if (!is_array($value)) {
+            $this->AddConfigurationError($property . ': erwartet wird eine Liste');
+            return [];
+        }
+
+        $validItems = [];
+        foreach ($value as $index => $item) {
+            if (!is_array($item)) {
+                $this->AddConfigurationError($property . '[' . $index . ']: ungültiger Listeneintrag');
+                continue;
+            }
+            $validItems[] = $item;
+        }
+
+        return $validItems;
+    }
+
+    private function ValidateLinkID(array &$errors, string $context, mixed $rawID): void
+    {
+        if ($rawID === null || $rawID === '' || (int)$rawID === 0) {
+            return;
+        }
+
+        if (!is_numeric($rawID)) {
+            $errors[] = $context . ': LinkID muss numerisch sein';
+            return;
+        }
+
+        $id = (int)$rawID;
+        if ($id <= 0 || !IPS_ObjectExists($id)) {
+            $errors[] = $context . ': verlinktes Objekt ' . $id . ' existiert nicht';
+        }
+    }
+
+    private function ExpectedVariableTypes(string $listKey, string $field): array
+    {
+        $key = $listKey . '.' . $field;
+
+        $booleanFields = [
+            'Raeume.Geraet1ID', 'Raeume.Geraet2ID', 'Raeume.Geraet3ID', 'Raeume.Geraet4ID',
+            'Fahrzeuge.ChargingID',
+            'KlimaGeraete.AktivID',
+            'Bewaesserung.AktivID',
+            'Waermepumpen.KompressorID', 'Waermepumpen.HeizstabID',
+        ];
+        if (in_array($key, $booleanFields, true)) {
+            return [0];
+        }
+
+        $numericFields = [
+            'Raeume.TempID', 'Raeume.HumID', 'Raeume.CO2ID',
+            'Fahrzeuge.SoCID', 'Fahrzeuge.RangeID', 'Fahrzeuge.ChargeMinID', 'Fahrzeuge.ChargePowerID',
+            'EnergieKacheln.SolarID', 'EnergieKacheln.VerbrauchID', 'EnergieKacheln.NetzID', 'EnergieKacheln.BatterieID',
+            'KlimaGeraete.TempID', 'KlimaGeraete.SollTempID',
+            'Bewaesserung.LaufzeitID', 'Bewaesserung.BodenID', 'Bewaesserung.BedarfID', 'Bewaesserung.TagesRestID',
+            'Lueftungsanlagen.LuefterID', 'Lueftungsanlagen.FrischluftID', 'Lueftungsanlagen.ZuluftID',
+            'Waermepumpen.TempMitteID', 'Waermepumpen.TempObenID',
+        ];
+        return in_array($key, $numericFields, true) ? [1, 2] : [];
+    }
+
+    private function ValidateVariableID(array &$errors, string $context, mixed $rawID, array $expectedTypes = []): void
+    {
+        if ($rawID === null || $rawID === '' || (int)$rawID === 0) {
+            return;
+        }
+
+        if (!is_numeric($rawID)) {
+            $errors[] = $context . ': Variablen-ID muss numerisch sein';
+            return;
+        }
+
+        $id = (int)$rawID;
+        if ($id <= 0 || !IPS_VariableExists($id)) {
+            $errors[] = $context . ': Variable ' . $id . ' existiert nicht';
+            return;
+        }
+
+        if ($expectedTypes !== []) {
+            $variable = IPS_GetVariable($id);
+            $type = (int)($variable['VariableType'] ?? -1);
+            if (!in_array($type, $expectedTypes, true)) {
+                $expected = implode('/', $expectedTypes);
+                $errors[] = $context . ': Variable ' . $id . ' hat Typ ' . $type . ', erwartet wird ' . $expected;
+            }
+        }
+    }
+
+    private function ValidateConfiguration(): array
+    {
+        $errors = [];
+        $this->configurationErrors = [];
+
+        $bereiche = $this->ReadJsonList('Bereiche');
+        $bereichNamen = [];
+        foreach ($bereiche as $index => $bereich) {
+            $name = trim((string)($bereich['Name'] ?? ''));
+            if ($name !== '' && in_array($name, $bereichNamen, true)) {
+                $errors[] = 'Bereiche[' . $index . ']: Name "' . $name . '" ist doppelt';
+            }
+            if ($name !== '') {
+                $bereichNamen[] = $name;
+            }
+            $this->ValidateLinkID($errors, 'Bereiche[' . $index . '].LinkID', $bereich['LinkID'] ?? 0);
+            foreach (['LichtID', 'FensterID', 'RolladenID'] as $field) {
+                $this->ValidateVariableID($errors, 'Bereiche[' . $index . '].' . $field, $bereich[$field] ?? 0);
+            }
+        }
+
+        $listFields = [
+            'Raeume' => ['LichtID', 'FensterID', 'TempID', 'HumID', 'CO2ID', 'Geraet1ID', 'Geraet2ID', 'Geraet3ID', 'Geraet4ID'],
+            'Fahrzeuge' => ['SoCID', 'RangeID', 'ChargingID', 'ChargeMinID', 'ChargePowerID', 'StatusID'],
+            'EnergieKacheln' => ['SolarID', 'VerbrauchID', 'NetzID', 'BatterieID'],
+            'KlimaGeraete' => ['TempID', 'SollTempID', 'ModusID', 'AktivID', 'VentilID'],
+            'Bewaesserung' => ['AktivID', 'NextStartID', 'LaufzeitID', 'BodenID', 'BedarfID', 'TagesRestID'],
+            'Lueftungsanlagen' => ['LuefterID', 'LueftModusID', 'FrischluftID', 'ZuluftID', 'BetriebsartID'],
+            'Waermepumpen' => ['TempMitteID', 'TempObenID', 'KompressorID', 'HeizstabID'],
+        ];
+
+        foreach ($listFields as $listKey => $fields) {
+            $items = $this->ReadJsonList($listKey);
+            foreach ($items as $index => $item) {
+                $context = $listKey . '[' . $index . ']';
+                if (trim((string)($item['Name'] ?? '')) === '') {
+                    $errors[] = $context . ': Name darf nicht leer sein';
+                }
+                $bereich = trim((string)($item['Bereich'] ?? ''));
+                if ($bereich !== '' && !in_array($bereich, $bereichNamen, true)) {
+                    $errors[] = $context . ': Bereich "' . $bereich . '" ist nicht definiert';
+                }
+                $this->ValidateLinkID($errors, $context . '.LinkID', $item['LinkID'] ?? 0);
+                foreach ($fields as $field) {
+                    $this->ValidateVariableID(
+                        $errors,
+                        $context . '.' . $field,
+                        $item[$field] ?? 0,
+                        $this->ExpectedVariableTypes($listKey, $field)
+                    );
+                }
+            }
+        }
+
+        $outsideFields = ['AussenTempID', 'AussenTempMinID', 'AussenTempMaxID', 'AussenHumID',
+            'WindRichtungID', 'WindBoenID', 'RegenRateID', 'RegenMenge24ID', 'TaupunktID', 'WetterwarnungID', 'UVID'];
+        foreach ($outsideFields as $field) {
+            $this->ValidateVariableID($errors, $field, $this->ReadPropertyInteger($field));
+        }
+        $this->ValidateLinkID($errors, 'OutdoorLinkID', $this->ReadPropertyInteger('OutdoorLinkID'));
+
+        if ($this->ReadPropertyFloat('TempWarnMin') >= $this->ReadPropertyFloat('TempWarnMax')) {
+            $errors[] = 'Temperatur-Warnbereich: Untergrenze muss kleiner als Obergrenze sein';
+        }
+        if ($this->ReadPropertyFloat('HumidityWarnMin') >= $this->ReadPropertyFloat('HumidityWarnMax')) {
+            $errors[] = 'Luftfeuchte-Warnbereich: Untergrenze muss kleiner als Obergrenze sein';
+        }
+        if ($this->ReadPropertyInteger('CO2WarnLevel') >= $this->ReadPropertyInteger('CO2AlarmLevel')) {
+            $errors[] = 'CO₂-Warnbereich: Warnstufe muss kleiner als Alarmstufe sein';
+        }
+        if ($this->ReadPropertyInteger('SoilWarnLevel') < 0 || $this->ReadPropertyInteger('SoilWarnLevel') > 100) {
+            $errors[] = 'Bodenfeuchte-Warnung: Wert muss zwischen 0 und 100 % liegen';
+        }
+
+        foreach ($errors as $error) {
+            $this->AddConfigurationError($error);
+        }
+        return $this->configurationErrors;
+    }
+
+    private function BuildConfigurationWarning(): string
+    {
+        if ($this->configurationErrors === []) {
+            return '';
+        }
+
+        $items = array_map(
+            fn(string $error): string => '<li>' . $this->EscapeHtml($error) . '</li>',
+            array_slice($this->configurationErrors, 0, 12)
+        );
+        $more = count($this->configurationErrors) > 12
+            ? '<li>Weitere Konfigurationsfehler sind vorhanden.</li>'
+            : '';
+        return '<div class="config-error"><strong>Konfiguration prüfen:</strong><ul>' . implode('', $items) . $more . '</ul></div>';
+    }
+
+    private function IsTemperatureAlarm(float $value): bool
+    {
+        return $value < $this->ReadPropertyFloat('TempWarnMin') || $value > $this->ReadPropertyFloat('TempWarnMax');
+    }
+
+    private function IsHumidityAlarm(float $value): bool
+    {
+        return $value < $this->ReadPropertyFloat('HumidityWarnMin') || $value > $this->ReadPropertyFloat('HumidityWarnMax');
+    }
+
+    private function IsCO2Alarm(float $value): bool
+    {
+        return $value >= $this->ReadPropertyInteger('CO2WarnLevel');
+    }
+
+    private function ClampPercent(float $value): int
+    {
+        return max(0, min(100, (int)round($value)));
+    }
+
+    private function FormatDuration(int $seconds): ?string
+    {
+        if ($seconds < 0) {
+            return null;
+        }
+        $minutes = (int)round($seconds / 60);
+        return ($minutes >= 60 ? (int)floor($minutes / 60) . 'h ' : '') . ($minutes % 60) . 'min';
+    }
+
+    private function WrapCard(string $html, string $stateClass, int $linkID): string
+    {
+        if ($linkID <= 0 || !IPS_ObjectExists($linkID)) {
+            return $html;
+        }
+        $needle = "<div class='card{$stateClass}'>";
+        $replacement = "<div class='card{$stateClass} clickable' onclick='openObject({$linkID})'>";
+        $count = 0;
+        $result = str_replace($needle, $replacement, $html, $count);
+        return $count > 0 ? $result : $html;
+    }
+
     private function SortByPosition(array &$items): void
     {
         foreach ($items as $i => &$item) {
@@ -611,12 +912,14 @@ HTML;
 
     private function BuildContent(array $bereiche, array $raeume): string
     {
-        $fahrzeuge        = json_decode($this->ReadPropertyString('Fahrzeuge'),        true) ?? [];
-        $energieKacheln   = json_decode($this->ReadPropertyString('EnergieKacheln'),   true) ?? [];
-        $klimaGeraete     = json_decode($this->ReadPropertyString('KlimaGeraete'),     true) ?? [];
-        $bewaesserung     = json_decode($this->ReadPropertyString('Bewaesserung'),     true) ?? [];
-        $lueftungsanlagen = json_decode($this->ReadPropertyString('Lueftungsanlagen'), true) ?? [];
-        $waermepumpen     = json_decode($this->ReadPropertyString('Waermepumpen'),     true) ?? [];
+        $fahrzeuge        = $this->ReadJsonList('Fahrzeuge');
+        $energieKacheln   = $this->ReadJsonList('EnergieKacheln');
+        $klimaGeraete     = $this->ReadJsonList('KlimaGeraete');
+        $bewaesserung     = $this->ReadJsonList('Bewaesserung');
+        $lueftungsanlagen = $this->ReadJsonList('Lueftungsanlagen');
+        $waermepumpen     = $this->ReadJsonList('Waermepumpen');
+
+        $configurationWarning = $this->BuildConfigurationWarning();
 
         foreach ($raeume          as &$r) { $r['__typ'] = 'raum'; }
         foreach ($fahrzeuge       as &$f) { $f['__typ'] = 'auto'; }
@@ -630,7 +933,7 @@ HTML;
         $alleItems = array_merge($raeume, $fahrzeuge, $energieKacheln, $klimaGeraete, $bewaesserung, $lueftungsanlagen, $waermepumpen);
 
         if (empty($bereiche) && empty($alleItems)) {
-            return '<p class="empty">Keine Kacheln konfiguriert.</p>';
+            return $configurationWarning . '<p class="empty">Keine Kacheln konfiguriert.</p>';
         }
 
         $this->SortByPosition($bereiche);
@@ -668,7 +971,8 @@ HTML;
             }
         }
 
-        $html  = $this->BuildOutdoorBar();
+        $html  = $configurationWarning;
+        $html .= $this->BuildOutdoorBar();
         $html .= $this->BuildGlobalStatus(array_values($nurRaeume));
 
         foreach ($ausgabeReihenfolge as $bereichName) {
@@ -757,7 +1061,7 @@ HTML;
         $warnBadge = '';
         if ($warnID > 0 && IPS_VariableExists($warnID)) {
             $warnLevel = (int)GetValue($warnID);
-            $warnText  = htmlspecialchars(GetValueFormatted($warnID));
+        $warnText  = $this->EscapeHtml(GetValueFormatted($warnID));
             $warnCls   = match(true) {
                 $warnLevel === 0                       => 'out-warn-0',
                 $warnLevel === 1                       => 'out-warn-1',
@@ -795,8 +1099,9 @@ HTML;
         }
 
         // Klick / Navigation
-        $clickAttr = $linkID > 0 ? " onclick='openObject({$linkID})'" : '';
-        $clickCls  = $linkID > 0 ? ' clickable' : '';
+        $hasLink   = $linkID > 0 && IPS_ObjectExists($linkID);
+        $clickAttr = $hasLink ? " onclick='openObject({$linkID})'" : '';
+        $clickCls  = $hasLink ? ' clickable' : '';
 
         $html  = "<div class='out-bar {$barTheme}{$clickCls}'{$clickAttr}>";
         $html .= "<span class='out-icon'>{$icon}</span>";
@@ -822,16 +1127,16 @@ HTML;
         // Zweite Zeile: Wind & Regen – gleiche Segment-Optik wie Zeile 1
         $row2 = '';
         if ($windRichtID > 0 && IPS_VariableExists($windRichtID)) {
-            $row2 .= "<div class='out-seg'><i class='fa-solid fa-compass' style='margin-right:3px'></i>" . htmlspecialchars(GetValueFormatted($windRichtID)) . "</div>";
+            $row2 .= "<div class='out-seg'><i class='fa-solid fa-compass' style='margin-right:3px'></i>" . $this->EscapeHtml(GetValueFormatted($windRichtID)) . "</div>";
         }
         if ($windBoenID > 0 && IPS_VariableExists($windBoenID)) {
-            $row2 .= "<div class='out-seg'><i class='fa-solid fa-wind' style='margin-right:3px'></i>" . htmlspecialchars(GetValueFormatted($windBoenID)) . "</div>";
+            $row2 .= "<div class='out-seg'><i class='fa-solid fa-wind' style='margin-right:3px'></i>" . $this->EscapeHtml(GetValueFormatted($windBoenID)) . "</div>";
         }
         if ($regenRateID > 0 && IPS_VariableExists($regenRateID)) {
-            $row2 .= "<div class='out-seg'><i class='fa-solid fa-cloud-rain' style='margin-right:3px'></i>" . htmlspecialchars(GetValueFormatted($regenRateID)) . "</div>";
+            $row2 .= "<div class='out-seg'><i class='fa-solid fa-cloud-rain' style='margin-right:3px'></i>" . $this->EscapeHtml(GetValueFormatted($regenRateID)) . "</div>";
         }
         if ($regen24ID > 0 && IPS_VariableExists($regen24ID)) {
-            $row2 .= "<div class='out-seg'><i class='fa-solid fa-cloud-showers-heavy' style='margin-right:3px'></i>24h: " . htmlspecialchars(GetValueFormatted($regen24ID)) . "</div>";
+            $row2 .= "<div class='out-seg'><i class='fa-solid fa-cloud-showers-heavy' style='margin-right:3px'></i>24h: " . $this->EscapeHtml(GetValueFormatted($regen24ID)) . "</div>";
         }
         if ($row2 !== '') {
             $html .= "<div class='out-row2'>{$row2}</div>";
@@ -879,17 +1184,17 @@ HTML;
             $tempID = (int)($raum['TempID'] ?? 0);
             if ($tempID > 0 && IPS_VariableExists($tempID)) {
                 $val = (float)GetValue($tempID);
-                if ($val < 18 || $val > 25) $tempWarn++;
+                if ($this->IsTemperatureAlarm($val)) $tempWarn++;
             }
             $humID = (int)($raum['HumID'] ?? 0);
             if ($humID > 0 && IPS_VariableExists($humID)) {
                 $val = (int)GetValue($humID);
-                if ($val < 30 || $val > 60) $luftWarn++;
+                if ($this->IsHumidityAlarm($val)) $luftWarn++;
             }
             $co2ID = (int)($raum['CO2ID'] ?? 0);
             if ($co2ID > 0 && IPS_VariableExists($co2ID)) {
                 $val = (int)GetValue($co2ID);
-                if ($val >= 1000) $luftWarn++;
+                if ($this->IsCO2Alarm($val)) $luftWarn++;
             }
         }
 
@@ -925,9 +1230,9 @@ HTML;
                 $id = (int)($raum[$key] ?? 0);
                 if ($id > 0 && IPS_VariableExists($id)) {
                     $val = (float)GetValue($id);
-                    if ($key === 'TempID' && ($val < 18 || $val > 25)) return true;
-                    if ($key === 'HumID'  && ($val < 30 || $val > 60)) return true;
-                    if ($key === 'CO2ID'  && $val >= 1000)              return true;
+                    if ($key === 'TempID' && $this->IsTemperatureAlarm($val)) return true;
+                    if ($key === 'HumID'  && $this->IsHumidityAlarm($val))    return true;
+                    if ($key === 'CO2ID'  && $this->IsCO2Alarm($val))          return true;
                 }
             }
         }
@@ -946,7 +1251,7 @@ HTML;
             $lichtID = (int)($def['LichtID'] ?? 0);
             if ($lichtID > 0 && IPS_VariableExists($lichtID)) {
                 $val     = GetValue($lichtID);
-                $varInfo = @IPS_GetVariable($lichtID);
+                $varInfo = IPS_GetVariable($lichtID);
                 $varType = $varInfo['VariableType'] ?? 0;
                 if ($varType === 0) {
                     $on   = (bool)$val;
@@ -964,7 +1269,7 @@ HTML;
             $fensterID = (int)($def['FensterID'] ?? 0);
             if ($fensterID > 0 && IPS_VariableExists($fensterID)) {
                 $val     = GetValue($fensterID);
-                $varInfo = @IPS_GetVariable($fensterID);
+                $varInfo = IPS_GetVariable($fensterID);
                 $varType = $varInfo['VariableType'] ?? 0;
                 if ($varType === 0) {
                     $open = (bool)$val;
@@ -983,13 +1288,13 @@ HTML;
             $rolladenID = (int)($def['RolladenID'] ?? 0);
             if ($rolladenID > 0 && IPS_VariableExists($rolladenID)) {
                 $val     = GetValue($rolladenID);
-                $varInfo = @IPS_GetVariable($rolladenID);
+                $varInfo = IPS_GetVariable($rolladenID);
                 $varType = $varInfo['VariableType'] ?? 0;
                 if ($varType === 0) {
                     $cls  = $val ? " class='al-r'" : '';
                     $text = $val ? 'offen' : 'zu';
                 } else {
-                    $formatted = htmlspecialchars(GetValueFormatted($rolladenID));
+                    $formatted = $this->EscapeHtml(GetValueFormatted($rolladenID));
                     $cls  = $val > 0 ? " class='al-r'" : '';
                     $text = $formatted;
                 }
@@ -997,14 +1302,17 @@ HTML;
             }
         }
 
-        if ($stats === '' && !empty($raeume) && !$this->HasBereichAlarm($raeume)) {
-            $stats = "<span class='grp-ok'><i class='fa-solid fa-check'></i> alles ok</span>";
+        if ($stats === '' && !empty($raeume)) {
+            $stats = $this->HasBereichAlarm($raeume)
+                ? "<span class='grp-alarm'><i class='fa-solid fa-triangle-exclamation'></i> prüfen</span>"
+                : "<span class='grp-ok'><i class='fa-solid fa-check'></i> alles ok</span>";
         }
 
         $linkID      = (int)(($def ?? [])['LinkID'] ?? 0);
-        $clickCls    = $linkID > 0 ? ' clickable' : '';
-        $clickAttr   = $linkID > 0 ? " onclick='openObject({$linkID})'" : '';
-        $displayName = $name !== '' ? htmlspecialchars($name) : 'Ohne Bereich';
+        $hasLink     = $linkID > 0 && IPS_ObjectExists($linkID);
+        $clickCls    = $hasLink ? ' clickable' : '';
+        $clickAttr   = $hasLink ? " onclick='openObject({$linkID})'" : '';
+        $displayName = $name !== '' ? $this->EscapeHtml($name) : 'Ohne Bereich';
 
         return "<div class='grp-hdr{$clickCls}'{$clickAttr}>"
             . "<span class='grp-name'>{$displayName}</span>"
@@ -1030,7 +1338,7 @@ HTML;
 
     private function BuildCard_Raum(array $raum): string
     {
-        $name = htmlspecialchars($raum['Name'] ?? 'Unbenannt');
+        $name = $this->EscapeHtml($raum['Name'] ?? 'Unbenannt');
 
         // Temperatur + Trend
         $tempStr   = '';
@@ -1039,7 +1347,7 @@ HTML;
         $tempID    = (int)($raum['TempID'] ?? 0);
         if ($tempID > 0 && IPS_VariableExists($tempID)) {
             $val       = round((float)GetValue($tempID), 1);
-            $tempCls   = ($val < 18 || $val > 25) ? ' al-r' : '';
+            $tempCls   = $this->IsTemperatureAlarm($val) ? ' al-r' : '';
             $tempStr   = str_replace('.', ',', (string)$val) . '°';
             $trendIcon = $this->GetTempTrend($tempID);
         }
@@ -1078,7 +1386,7 @@ HTML;
         $humHTML = '';
         if ($humID > 0 && IPS_VariableExists($humID)) {
             $val     = (int)round((float)GetValue($humID));
-            $alarm   = ($val < 30 || $val > 60);
+            $alarm   = $this->IsHumidityAlarm($val);
             $cls     = $alarm ? " class='al-r'" : '';
             $icoHum  = $alarm ? 'ico-alert' : 'ico-muted';
             $humHTML = "<span class='p-ico'><i class='fa-solid fa-droplet {$icoHum}'></i></span><span{$cls}>{$val}%</span>";
@@ -1089,8 +1397,8 @@ HTML;
         $co2HTML = '';
         if ($co2ID > 0 && IPS_VariableExists($co2ID)) {
             $val = (int)GetValue($co2ID);
-            if ($val > 1400)      { $valCls = " class='al-r'"; $dotCls = 'dot-r'; $icoCO2 = 'ico-alert'; }
-            elseif ($val >= 1000) { $valCls = " class='al-y'"; $dotCls = 'dot-y'; $icoCO2 = 'ico-warn'; }
+            if ($val > $this->ReadPropertyInteger('CO2AlarmLevel')) { $valCls = " class='al-r'"; $dotCls = 'dot-r'; $icoCO2 = 'ico-alert'; }
+            elseif ($val >= $this->ReadPropertyInteger('CO2WarnLevel')) { $valCls = " class='al-y'"; $dotCls = 'dot-y'; $icoCO2 = 'ico-warn'; }
             else                  { $valCls = '';               $dotCls = 'dot-g'; $icoCO2 = 'ico-muted'; }
             $co2HTML = "<span class='p-ico'><i class='fa-solid fa-wind {$icoCO2}'></i></span><span{$valCls}>{$val}</span><span class='co2dot {$dotCls}'></span>";
         }
@@ -1116,14 +1424,14 @@ HTML;
             $raum['Slot4'] ?? 'co2',
         ];
 
-        $row1 = "<div class='p-row'>"
-            . "<span class='p-cell'>" . ($slotPool[$slots[0]] ?? '') . "</span>"
-            . "<span class='p-cell'>" . ($slotPool[$slots[1]] ?? '') . "</span>"
-            . "</div>";
-        $row2 = "<div class='p-row'>"
-            . "<span class='p-cell'>" . ($slotPool[$slots[2]] ?? '') . "</span>"
-            . "<span class='p-cell'>" . ($slotPool[$slots[3]] ?? '') . "</span>"
-            . "</div>";
+        $row1Cells = [$slotPool[$slots[0]] ?? '', $slotPool[$slots[1]] ?? ''];
+        $row2Cells = [$slotPool[$slots[2]] ?? '', $slotPool[$slots[3]] ?? ''];
+        $row1 = ($row1Cells[0] !== '' || $row1Cells[1] !== '')
+            ? "<div class='p-row'><span class='p-cell'>{$row1Cells[0]}</span><span class='p-cell'>{$row1Cells[1]}</span></div>"
+            : '';
+        $row2 = ($row2Cells[0] !== '' || $row2Cells[1] !== '')
+            ? "<div class='p-row'><span class='p-cell'>{$row2Cells[0]}</span><span class='p-cell'>{$row2Cells[1]}</span></div>"
+            : '';
 
         if ($isFensterAuf)  { $stateClass = ' s-alert'; }
         elseif ($isLichtAn) { $stateClass = ' s-warn'; }
@@ -1134,7 +1442,8 @@ HTML;
             . "</div>";
 
         $linkID   = (int)($raum['LinkID'] ?? 0);
-        $cardAttr = $linkID > 0
+        $hasLink  = $linkID > 0 && IPS_ObjectExists($linkID);
+        $cardAttr = $hasLink
             ? "class='card{$stateClass} clickable' onclick='openObject({$linkID})'"
             : "class='card{$stateClass}'";
 
@@ -1143,31 +1452,35 @@ HTML;
 
     private function GetTempTrend(int $varID): string
     {
-        static $archiveID = null;
-        if ($archiveID === null) {
+        if ($this->archiveID === null || $this->archiveID === 0) {
             $ids       = IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
-            $archiveID = !empty($ids) ? (int)$ids[0] : 0;
+            $this->archiveID = !empty($ids) ? (int)$ids[0] : 0;
         }
-        if ($archiveID === 0) {
+        if ($this->archiveID === 0) {
             return '';
         }
-        if (!AC_GetLoggingStatus($archiveID, $varID)) {
+        if (array_key_exists($varID, $this->trendCache)) {
+            return $this->trendCache[$varID];
+        }
+        if (!AC_GetLoggingStatus($this->archiveID, $varID)) {
+            $this->trendCache[$varID] = '';
             return '';
         }
 
         $now    = time();
-        $values = AC_GetLoggedValues($archiveID, $varID, $now - 2 * 3600, $now, 0);
-        $thresh = 0.8;
+        $values = AC_GetLoggedValues($this->archiveID, $varID, $now - self::TREND_PRIMARY_SECONDS, $now, 0);
+        $thresh = self::TREND_PRIMARY_THRESHOLD;
 
         // Sensor loggt nur bei Änderung → 2-Std.-Fenster zu leer → 6-Std.-Fenster probieren
         if (!is_array($values) || count($values) < 2) {
-            $values = AC_GetLoggedValues($archiveID, $varID, $now - 6 * 3600, $now, 0);
-            $thresh = 2.0;
+            $values = AC_GetLoggedValues($this->archiveID, $varID, $now - self::TREND_FALLBACK_SECONDS, $now, 0);
+            $thresh = self::TREND_FALLBACK_THRESHOLD;
         }
 
         // Immer noch < 2 Werte → Temperatur ist konstant stabil
         if (!is_array($values) || count($values) < 2) {
-            return " <i class='fa-solid fa-arrow-right trend-st'></i>";
+            $this->trendCache[$varID] = " <i class='fa-solid fa-arrow-right trend-st'></i>";
+            return $this->trendCache[$varID];
         }
 
         // AC_GetLoggedValues liefert newest-first: Index 0 = neuster, letzter = ältester
@@ -1176,18 +1489,21 @@ HTML;
         $delta  = $newest - $oldest;
 
         if ($delta >= $thresh) {
-            return " <i class='fa-solid fa-arrow-trend-up trend-up'></i>";
+            $this->trendCache[$varID] = " <i class='fa-solid fa-arrow-trend-up trend-up'></i>";
+            return $this->trendCache[$varID];
         }
         if ($delta <= -$thresh) {
-            return " <i class='fa-solid fa-arrow-trend-down trend-dn'></i>";
+            $this->trendCache[$varID] = " <i class='fa-solid fa-arrow-trend-down trend-dn'></i>";
+            return $this->trendCache[$varID];
         }
-        return " <i class='fa-solid fa-arrow-right trend-st'></i>";
+        $this->trendCache[$varID] = " <i class='fa-solid fa-arrow-right trend-st'></i>";
+        return $this->trendCache[$varID];
     }
 
     private function RenderGeraet(int $nr, array $raum): string
     {
         $id    = (int)($raum["Geraet{$nr}ID"] ?? 0);
-        $label = htmlspecialchars($raum["Geraet{$nr}Name"] ?? "Gerät {$nr}");
+        $label = $this->EscapeHtml($raum["Geraet{$nr}Name"] ?? "Gerät {$nr}");
         if ($id === 0 || !IPS_VariableExists($id)) {
             return '';
         }
@@ -1201,7 +1517,7 @@ HTML;
 
     private function BuildCard_Auto(array $item): string
     {
-        $name = htmlspecialchars($item['Name'] ?? '');
+        $name = $this->EscapeHtml($item['Name'] ?? '');
 
         // SoC
         $socID  = (int)($item['SoCID'] ?? 0);
@@ -1209,7 +1525,7 @@ HTML;
         $socStr = '';
         $socCls = '';
         if ($socID > 0 && IPS_VariableExists($socID)) {
-            $soc    = (int)GetValue($socID);
+            $soc    = $this->ClampPercent((float)GetValue($socID));
             $socCls = $soc < 20 ? ' al-r' : ($soc < 40 ? ' al-y' : '');
             $socStr = "{$soc}%";
         }
@@ -1228,9 +1544,7 @@ HTML;
         $chargeMin   = '';
         $chargeMinID = (int)($item['ChargeMinID'] ?? 0);
         if ($isCharging && $chargeMinID > 0 && IPS_VariableExists($chargeMinID)) {
-            $sec       = (int)GetValue($chargeMinID);
-            $min       = (int)round($sec / 60);
-            $chargeMin = ($min >= 60 ? (int)floor($min / 60) . 'h ' : '') . ($min % 60) . 'min';
+            $chargeMin = $this->FormatDuration((int)GetValue($chargeMinID)) ?? '';
         }
 
         // Ladeleistung kW
@@ -1246,7 +1560,7 @@ HTML;
         $statusStr = '';
         $statusID  = (int)($item['StatusID'] ?? 0);
         if ($statusID > 0 && IPS_VariableExists($statusID)) {
-            $statusStr = htmlspecialchars(GetValueFormatted($statusID));
+            $statusStr = $this->EscapeHtml(GetValueFormatted($statusID));
         }
 
         if ($isCharging)         { $stateClass = ' s-charging'; }
@@ -1279,10 +1593,7 @@ HTML;
         }
 
         $linkID = (int)($item['LinkID'] ?? 0);
-        if ($linkID > 0) {
-            $html = "<div class='card{$stateClass} clickable' onclick='openObject({$linkID})'>"
-                . substr($html, strlen("<div class='card{$stateClass}'>"));
-        }
+        $html = $this->WrapCard($html, $stateClass, $linkID);
 
         $html .= "</div>";
         return $html;
@@ -1292,7 +1603,7 @@ HTML;
 
     private function BuildCard_Energie(array $item): string
     {
-        $name = htmlspecialchars($item['Name'] ?? '');
+        $name = $this->EscapeHtml($item['Name'] ?? '');
 
         $solarID     = (int)($item['SolarID']     ?? 0);
         $verbrauchID = (int)($item['VerbrauchID'] ?? 0);
@@ -1302,7 +1613,7 @@ HTML;
         $solarW  = ($solarID > 0     && IPS_VariableExists($solarID))     ? (int)GetValue($solarID)     : null;
         $verbW   = ($verbrauchID > 0 && IPS_VariableExists($verbrauchID)) ? (int)GetValue($verbrauchID) : null;
         $netzW   = ($netzID > 0      && IPS_VariableExists($netzID))      ? (int)GetValue($netzID)      : null;
-        $batPct  = ($batterieID > 0  && IPS_VariableExists($batterieID))  ? (int)GetValue($batterieID)  : null;
+            $batPct  = ($batterieID > 0  && IPS_VariableExists($batterieID))  ? $this->ClampPercent((float)GetValue($batterieID))  : null;
 
         $html  = "<div class='card'>";
         $html .= "<div class='c-head'><span class='c-name'>{$name}</span>";
@@ -1331,9 +1642,7 @@ HTML;
         }
 
         $linkID = (int)($item['LinkID'] ?? 0);
-        if ($linkID > 0) {
-            $html = str_replace("<div class='card'>", "<div class='card clickable' onclick='openObject({$linkID})'>", $html);
-        }
+        $html = $this->WrapCard($html, '', $linkID);
 
         $html .= "</div>";
         return $html;
@@ -1343,7 +1652,7 @@ HTML;
 
     private function BuildCard_Klima(array $item): string
     {
-        $name = htmlspecialchars($item['Name'] ?? '');
+        $name = $this->EscapeHtml($item['Name'] ?? '');
 
         $tempID     = (int)($item['TempID']     ?? 0);
         $sollTempID = (int)($item['SollTempID'] ?? 0);
@@ -1353,11 +1662,11 @@ HTML;
 
         $istTemp  = ($tempID > 0     && IPS_VariableExists($tempID))     ? round((float)GetValue($tempID), 1)     : null;
         $sollTemp = ($sollTempID > 0 && IPS_VariableExists($sollTempID)) ? round((float)GetValue($sollTempID), 1) : null;
-        $modus    = ($modusID > 0    && IPS_VariableExists($modusID))    ? htmlspecialchars(GetValueFormatted($modusID)) : null;
+        $modus    = ($modusID > 0    && IPS_VariableExists($modusID))    ? $this->EscapeHtml(GetValueFormatted($modusID)) : null;
         $istAktiv = ($aktivID > 0    && IPS_VariableExists($aktivID))    ? (bool)GetValue($aktivID) : null;
 
         $lueftermodus = ($ventilID > 0 && IPS_VariableExists($ventilID))
-            ? htmlspecialchars(GetValueFormatted($ventilID)) : null;
+            ? $this->EscapeHtml(GetValueFormatted($ventilID)) : null;
 
         $trendIcon = ($tempID > 0 && IPS_VariableExists($tempID)) ? $this->GetTempTrend($tempID) : '';
         $istStr  = $istTemp  !== null ? str_replace('.', ',', (string)$istTemp)  . '°' : '';
@@ -1395,9 +1704,7 @@ HTML;
         }
 
         $linkID = (int)($item['LinkID'] ?? 0);
-        if ($linkID > 0) {
-            $html = str_replace("<div class='card{$stateClass}'>", "<div class='card{$stateClass} clickable' onclick='openObject({$linkID})'>", $html);
-        }
+        $html = $this->WrapCard($html, $stateClass, $linkID);
 
         $html .= "</div>";
         return $html;
@@ -1407,7 +1714,7 @@ HTML;
 
     private function BuildCard_Wasser(array $item): string
     {
-        $name = htmlspecialchars($item['Name'] ?? '');
+        $name = $this->EscapeHtml($item['Name'] ?? '');
 
         $aktivID     = (int)($item['AktivID']     ?? 0);
         $nextStartID = (int)($item['NextStartID'] ?? 0);
@@ -1417,13 +1724,11 @@ HTML;
         $tagesRestID = (int)($item['TagesRestID'] ?? 0);
 
         $isAktiv   = ($aktivID > 0     && IPS_VariableExists($aktivID))     && (bool)GetValue($aktivID);
-        $nextStr   = ($nextStartID > 0 && IPS_VariableExists($nextStartID)) ? htmlspecialchars(GetValueFormatted($nextStartID)) : null;
+        $nextStr   = ($nextStartID > 0 && IPS_VariableExists($nextStartID)) ? $this->EscapeHtml(GetValueFormatted($nextStartID)) : null;
         $laufzeit  = ($laufzeitID > 0  && IPS_VariableExists($laufzeitID))  ? (int)GetValue($laufzeitID)  : null;
         $boden     = ($bodenID > 0     && IPS_VariableExists($bodenID))     ? (int)GetValue($bodenID)     : null;
         if ($bedarfID > 0 && IPS_VariableExists($bedarfID)) {
-            $bedarfSec = (int)GetValue($bedarfID);
-            $bedarfMin = (int)round($bedarfSec / 60);
-            $bedarfStr = ($bedarfMin >= 60 ? (int)floor($bedarfMin / 60) . 'h ' : '') . ($bedarfMin % 60) . 'min';
+            $bedarfStr = $this->FormatDuration((int)GetValue($bedarfID));
         } else {
             $bedarfStr = null;
         }
@@ -1439,13 +1744,11 @@ HTML;
         $html .= "</div>";
 
         if ($isAktiv && $laufzeit !== null && $laufzeit > 0) {
-            $restMin = (int)round($laufzeit / 60);
-            $restStr = ($restMin >= 60 ? (int)floor($restMin / 60) . 'h ' : '') . ($restMin % 60) . 'min';
+            $restStr = $this->FormatDuration($laufzeit);
             $html   .= "<div class='p-row'><span class='p-cell'><span class='p-ico'><i class='fa-solid fa-clock ico-active'></i></span><span>noch {$restStr}</span></span></div>";
         }
         if ($tagesRest !== null) {
-            $tagesMin = (int)round($tagesRest / 60);
-            $tagesStr = ($tagesMin >= 60 ? (int)floor($tagesMin / 60) . 'h ' : '') . ($tagesMin % 60) . 'min';
+            $tagesStr = $this->FormatDuration($tagesRest);
             $html    .= "<div class='p-row'><span class='p-cell'><span class='p-ico'><i class='fa-solid fa-hourglass-half ico-muted'></i></span><span>Heute noch: {$tagesStr}</span></span></div>";
         }
         if ($bedarfStr !== null) {
@@ -1455,14 +1758,13 @@ HTML;
             $html .= "<div class='p-row'><span class='p-cell'><span class='p-ico'><i class='fa-solid fa-calendar ico-muted'></i></span><span>{$nextStr}</span></span></div>";
         }
         if ($boden !== null) {
-            $bodenCls = $boden < 30 ? 'ico-warn' : 'ico-muted';
+            $boden = $this->ClampPercent((float)$boden);
+            $bodenCls = $boden < $this->ReadPropertyInteger('SoilWarnLevel') ? 'ico-warn' : 'ico-muted';
             $html    .= "<div class='p-row'><span class='p-cell'><span class='p-ico'><i class='fa-solid fa-seedling {$bodenCls}'></i></span><span>Boden: {$boden}%</span></span></div>";
         }
 
         $linkID = (int)($item['LinkID'] ?? 0);
-        if ($linkID > 0) {
-            $html = str_replace("<div class='card{$stateClass}'>", "<div class='card{$stateClass} clickable' onclick='openObject({$linkID})'>", $html);
-        }
+        $html = $this->WrapCard($html, $stateClass, $linkID);
 
         $html .= "</div>";
         return $html;
@@ -1472,7 +1774,7 @@ HTML;
 
     private function BuildCard_Lueftung(array $item): string
     {
-        $name = htmlspecialchars($item['Name'] ?? '');
+        $name = $this->EscapeHtml($item['Name'] ?? '');
 
         $luefterID     = (int)($item['LuefterID']     ?? 0);
         $lueftModusID  = (int)($item['LueftModusID']  ?? 0);
@@ -1481,10 +1783,10 @@ HTML;
         $betriebsartID = (int)($item['BetriebsartID'] ?? 0);
 
         $luefter     = ($luefterID > 0     && IPS_VariableExists($luefterID))     ? (int)GetValue($luefterID)                                   : null;
-        $modus       = ($lueftModusID > 0  && IPS_VariableExists($lueftModusID))  ? htmlspecialchars(GetValueFormatted($lueftModusID))           : null;
+        $modus       = ($lueftModusID > 0  && IPS_VariableExists($lueftModusID))  ? $this->EscapeHtml(GetValueFormatted($lueftModusID))           : null;
         $frischluft  = ($frischluftID > 0  && IPS_VariableExists($frischluftID))  ? round((float)GetValue($frischluftID), 1)                     : null;
         $zuluft      = ($zuluftID > 0      && IPS_VariableExists($zuluftID))      ? round((float)GetValue($zuluftID), 1)                         : null;
-        $betriebsart = ($betriebsartID > 0 && IPS_VariableExists($betriebsartID)) ? htmlspecialchars(GetValueFormatted($betriebsartID))          : null;
+        $betriebsart = ($betriebsartID > 0 && IPS_VariableExists($betriebsartID)) ? $this->EscapeHtml(GetValueFormatted($betriebsartID))          : null;
 
         $isActive   = $luefter !== null && $luefter > 0;
         $stateClass = $isActive ? ' s-active' : '';
@@ -1513,9 +1815,7 @@ HTML;
         }
 
         $linkID = (int)($item['LinkID'] ?? 0);
-        if ($linkID > 0) {
-            $html = str_replace("<div class='card{$stateClass}'>", "<div class='card{$stateClass} clickable' onclick='openObject({$linkID})'>", $html);
-        }
+        $html = $this->WrapCard($html, $stateClass, $linkID);
 
         $html .= "</div>";
         return $html;
@@ -1525,7 +1825,7 @@ HTML;
 
     private function BuildCard_Waermepumpe(array $item): string
     {
-        $name = htmlspecialchars($item['Name'] ?? '');
+        $name = $this->EscapeHtml($item['Name'] ?? '');
 
         $tempMitteID  = (int)($item['TempMitteID']  ?? 0);
         $tempObenID   = (int)($item['TempObenID']   ?? 0);
@@ -1534,8 +1834,8 @@ HTML;
 
         $tempMitte  = ($tempMitteID > 0  && IPS_VariableExists($tempMitteID))  ? round((float)GetValue($tempMitteID), 1)                    : null;
         $tempOben   = ($tempObenID > 0   && IPS_VariableExists($tempObenID))   ? round((float)GetValue($tempObenID), 1)                     : null;
-        $kompStr    = ($kompressorID > 0 && IPS_VariableExists($kompressorID)) ? htmlspecialchars(GetValueFormatted($kompressorID))          : null;
-        $heizStr    = ($heizstabID > 0   && IPS_VariableExists($heizstabID))   ? htmlspecialchars(GetValueFormatted($heizstabID))            : null;
+        $kompStr    = ($kompressorID > 0 && IPS_VariableExists($kompressorID)) ? $this->EscapeHtml(GetValueFormatted($kompressorID))          : null;
+        $heizStr    = ($heizstabID > 0   && IPS_VariableExists($heizstabID))   ? $this->EscapeHtml(GetValueFormatted($heizstabID))            : null;
         $isKompAn   = ($kompressorID > 0 && IPS_VariableExists($kompressorID)) && (bool)GetValue($kompressorID);
         $isHzAn     = ($heizstabID > 0   && IPS_VariableExists($heizstabID))   && (bool)GetValue($heizstabID);
 
@@ -1568,9 +1868,7 @@ HTML;
         }
 
         $linkID = (int)($item['LinkID'] ?? 0);
-        if ($linkID > 0) {
-            $html = str_replace("<div class='card{$stateClass}'>", "<div class='card{$stateClass} clickable' onclick='openObject({$linkID})'>", $html);
-        }
+        $html = $this->WrapCard($html, $stateClass, $linkID);
 
         $html .= "</div>";
         return $html;
