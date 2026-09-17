@@ -15,7 +15,7 @@ Visualisierungs-Kachel für IP-Symcon ≥ 8.2 — zeigt Räume, E-Autos, Energie
 
 Die Einstellungen erfolgen über die Instanz-Konfiguration mit getrennten Panels pro Kacheltyp:
 
-- **Anzeige / Grenzwerte** – Aktualisierungsintervall und Warnwerte für Temperatur, Luftfeuchte, CO₂ und Bodenfeuchte
+- **Anzeige / Grenzwerte** – Aktualisierungsintervall, Warnwerte und optional Titel ausblenden (ab IP-Symcon 9.1)
 - **Außen / Wetter** – Außentemperatur, Luftfeuchte, Min/Max
 - **Bereiche / Stockwerke** – Gruppierung mit Aggregat-Variablen
 - **Räume** – Sensoren, 4 Anzeige-Slots, bis zu 4 schaltbare Geräte

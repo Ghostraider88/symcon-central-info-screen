@@ -52,6 +52,7 @@ class HomeScreen extends IPSModuleStrict
         $this->RegisterPropertyInteger('CO2WarnLevel', 1000);
         $this->RegisterPropertyInteger('CO2AlarmLevel', 1400);
         $this->RegisterPropertyInteger('SoilWarnLevel', 30);
+        $this->RegisterPropertyBoolean('HideTitle', false);
 
         $this->SetVisualizationType(1);
 
@@ -64,6 +65,11 @@ class HomeScreen extends IPSModuleStrict
         parent::ApplyChanges();
 
         $this->configurationErrors = $this->ValidateConfiguration();
+        if (function_exists('IPS_SetHiddenTitle')) {
+            if (!IPS_SetHiddenTitle($this->InstanceID, $this->ReadPropertyBoolean('HideTitle'))) {
+                $this->AddConfigurationError('Titelanzeige: Die Einstellung konnte nicht übernommen werden');
+            }
+        }
 
         foreach ($this->GetReferenceList() as $ref) {
             $this->UnregisterReference($ref);
@@ -199,6 +205,7 @@ class HomeScreen extends IPSModuleStrict
     private function RenderTile(string $content, string $footer): string
     {
         $safeFooter = $this->EscapeHtml($footer);
+        $bodyTopPadding = $this->ReadPropertyBoolean('HideTitle') ? '0' : '35px';
 
         return <<<HTML
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -211,7 +218,7 @@ class HomeScreen extends IPSModuleStrict
   /* Symcon stellt automatisch bereit: --accent-color, --content-color, --card-color */
   :root{--text-muted:#999;--group-bg:rgba(0,0,0,0.04);--div-clr:rgba(0,0,0,0.08);--footer:#bbb;}
   *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:transparent;color:var(--content-color);font-family:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:35px 8px 8px;font-size:13px;}
+  body{background:transparent;color:var(--content-color);font-family:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:{$bodyTopPadding} 8px 8px;font-size:13px;}
   .grp{margin-bottom:8px;}
   .grp+.grp{margin-top:10px;}
   .grp-hdr{display:flex;align-items:center;gap:6px;padding:4px 7px;background:var(--group-bg);border-radius:5px;margin-bottom:5px;border-left:3px solid var(--accent-color);}
@@ -407,6 +414,7 @@ HTML;
                     'type'    => 'ExpansionPanel',
                     'caption' => 'Anzeige / Grenzwerte',
                     'items'   => [
+                        ['type' => 'CheckBox', 'name' => 'HideTitle', 'caption' => 'Titel ausblenden und oberen Abstand entfernen'],
                         ['type' => 'NumberSpinner', 'name' => 'RefreshIntervalMinutes', 'caption' => 'Aktualisierungsintervall (Minuten)', 'minimum' => 1, 'maximum' => 60],
                         ['type' => 'NumberSpinner', 'name' => 'TempWarnMin', 'caption' => 'Temperatur-Warnung ab (°C)', 'minimum' => -50, 'maximum' => 80, 'digits' => 1],
                         ['type' => 'NumberSpinner', 'name' => 'TempWarnMax', 'caption' => 'Temperatur-Warnung über (°C)', 'minimum' => -50, 'maximum' => 80, 'digits' => 1],
@@ -689,6 +697,73 @@ HTML;
         return $validItems;
     }
 
+    private function ListLabel(string $listKey): string
+    {
+        return [
+            'Bereiche' => 'Bereiche',
+            'Raeume' => 'Räume',
+            'Fahrzeuge' => 'Fahrzeuge',
+            'EnergieKacheln' => 'Energie-Kacheln',
+            'KlimaGeraete' => 'Klima-Geräte',
+            'Bewaesserung' => 'Bewässerung',
+            'Lueftungsanlagen' => 'Lüftungsanlagen',
+            'Waermepumpen' => 'Warmwasser-Wärmepumpen',
+            'Aussen' => 'Außen / Wetter',
+        ][$listKey] ?? $listKey;
+    }
+
+    private function FieldLabel(string $listKey, string $field): string
+    {
+        $labels = [
+            'Bereiche' => ['LinkID' => 'Navigation', 'LichtID' => 'Licht', 'FensterID' => 'Fenster', 'RolladenID' => 'Rollladen'],
+            'Raeume' => [
+                'LichtID' => 'Licht', 'FensterID' => 'Fenster', 'TempID' => 'Temperatur', 'HumID' => 'Luftfeuchte',
+                'CO2ID' => 'CO₂', 'Geraet1ID' => 'Gerät 1', 'Geraet2ID' => 'Gerät 2', 'Geraet3ID' => 'Gerät 3', 'Geraet4ID' => 'Gerät 4',
+            ],
+            'Fahrzeuge' => [
+                'LinkID' => 'Navigation', 'SoCID' => 'Batteriestand (SoC)', 'RangeID' => 'Reichweite', 'ChargingID' => 'Ladestatus',
+                'ChargeMinID' => 'Restladezeit', 'ChargePowerID' => 'Ladeleistung', 'StatusID' => 'Status',
+            ],
+            'EnergieKacheln' => ['LinkID' => 'Navigation', 'SolarID' => 'Solarleistung', 'VerbrauchID' => 'Verbrauch', 'NetzID' => 'Netzleistung', 'BatterieID' => 'Batteriestand'],
+            'KlimaGeraete' => ['LinkID' => 'Navigation', 'TempID' => 'Ist-Temperatur', 'SollTempID' => 'Soll-Temperatur', 'ModusID' => 'Modus', 'AktivID' => 'Aktivstatus', 'VentilID' => 'Ventil / Gebläse'],
+            'Bewaesserung' => ['LinkID' => 'Navigation', 'AktivID' => 'Aktivstatus', 'NextStartID' => 'Nächster Start', 'LaufzeitID' => 'Restlaufzeit', 'BodenID' => 'Bodenfeuchte', 'BedarfID' => 'Bedarf', 'TagesRestID' => 'Tagesrest'],
+            'Lueftungsanlagen' => ['LinkID' => 'Navigation', 'LuefterID' => 'Lüfterstufe', 'LueftModusID' => 'Lüftermodus', 'FrischluftID' => 'Frischlufttemperatur', 'ZuluftID' => 'Zulufttemperatur', 'BetriebsartID' => 'Betriebsart'],
+            'Waermepumpen' => ['LinkID' => 'Navigation', 'TempMitteID' => 'Temperatur Mitte', 'TempObenID' => 'Temperatur oben', 'KompressorID' => 'Kompressorstatus', 'HeizstabID' => 'Heizstabstatus'],
+            'Aussen' => [
+                'AussenTempID' => 'Außentemperatur', 'AussenTempMinID' => 'Tages-Tiefstwert', 'AussenTempMaxID' => 'Tages-Höchstwert',
+                'AussenHumID' => 'Außenluftfeuchte', 'WindRichtungID' => 'Windrichtung', 'WindBoenID' => 'Windböen', 'RegenRateID' => 'Regenrate',
+                'RegenMenge24ID' => 'Regenmenge 24h', 'TaupunktID' => 'Taupunkt', 'WetterwarnungID' => 'Wetterwarnung', 'UVID' => 'UV-Index',
+            ],
+        ];
+
+        return $labels[$listKey][$field] ?? $field;
+    }
+
+    private function ConfigurationContext(string $listKey, int|string $index, array $item = []): string
+    {
+        $name = trim((string)($item['Name'] ?? ''));
+        return $this->ListLabel($listKey) . '[' . $index . ']' . ($name !== '' ? ' „' . $name . '“' : '');
+    }
+
+    private function VariableTypeLabel(int $type): string
+    {
+        return match ($type) {
+            0 => 'Boolean',
+            1 => 'Integer',
+            2 => 'Float',
+            3 => 'String',
+            default => 'unbekannt',
+        };
+    }
+
+    private function ExpectedTypeLabel(array $types): string
+    {
+        return implode(' oder ', array_map(
+            fn(int $type): string => $this->VariableTypeLabel($type) . ' (' . $type . ')',
+            $types
+        ));
+    }
+
     private function ValidateLinkID(array &$errors, string $context, mixed $rawID): void
     {
         if ($rawID === null || $rawID === '' || (int)$rawID === 0) {
@@ -696,13 +771,13 @@ HTML;
         }
 
         if (!is_numeric($rawID)) {
-            $errors[] = $context . ': LinkID muss numerisch sein';
+            $errors[] = $context . ': Objekt-ID muss eine Zahl sein. Prüfen: Navigation leeren oder ein gültiges IPS-Objekt auswählen.';
             return;
         }
 
         $id = (int)$rawID;
         if ($id <= 0 || !IPS_ObjectExists($id)) {
-            $errors[] = $context . ': verlinktes Objekt ' . $id . ' existiert nicht';
+            $errors[] = $context . ': Objekt-ID ' . $id . ' existiert nicht. Prüfen: Navigation leeren oder ein gültiges IPS-Objekt auswählen.';
         }
     }
 
@@ -740,13 +815,13 @@ HTML;
         }
 
         if (!is_numeric($rawID)) {
-            $errors[] = $context . ': Variablen-ID muss numerisch sein';
+            $errors[] = $context . ': Variablen-ID muss eine Zahl sein. Prüfen: eine vorhandene Variable auswählen oder das Feld leeren.';
             return;
         }
 
         $id = (int)$rawID;
         if ($id <= 0 || !IPS_VariableExists($id)) {
-            $errors[] = $context . ': Variable ' . $id . ' existiert nicht';
+            $errors[] = $context . ': Variablen-ID ' . $id . ' existiert nicht. Prüfen: eine vorhandene Variable auswählen oder das Feld leeren.';
             return;
         }
 
@@ -754,8 +829,11 @@ HTML;
             $variable = IPS_GetVariable($id);
             $type = (int)($variable['VariableType'] ?? -1);
             if (!in_array($type, $expectedTypes, true)) {
-                $expected = implode('/', $expectedTypes);
-                $errors[] = $context . ': Variable ' . $id . ' hat Typ ' . $type . ', erwartet wird ' . $expected;
+                $variableName = trim((string)IPS_GetName($id));
+                $nameSuffix = $variableName !== '' ? ' „' . $variableName . '“' : '';
+                $actual = $this->VariableTypeLabel($type) . ' (' . $type . ')';
+                $expected = $this->ExpectedTypeLabel($expectedTypes);
+                $errors[] = $context . ': Variablen-ID ' . $id . $nameSuffix . ' hat Typ ' . $actual . ', erwartet wird ' . $expected . '. Prüfen: eine Variable vom erwarteten Typ auswählen oder das Feld leeren.';
             }
         }
     }
@@ -769,15 +847,16 @@ HTML;
         $bereichNamen = [];
         foreach ($bereiche as $index => $bereich) {
             $name = trim((string)($bereich['Name'] ?? ''));
+            $context = $this->ConfigurationContext('Bereiche', $index, $bereich);
             if ($name !== '' && in_array($name, $bereichNamen, true)) {
-                $errors[] = 'Bereiche[' . $index . ']: Name "' . $name . '" ist doppelt';
+                $errors[] = $context . ': Name ist doppelt. Prüfen: Bereich umbenennen, damit jeder Bereich eindeutig ist.';
             }
             if ($name !== '') {
                 $bereichNamen[] = $name;
             }
-            $this->ValidateLinkID($errors, 'Bereiche[' . $index . '].LinkID', $bereich['LinkID'] ?? 0);
+            $this->ValidateLinkID($errors, $context . ' → Navigation', $bereich['LinkID'] ?? 0);
             foreach (['LichtID', 'FensterID', 'RolladenID'] as $field) {
-                $this->ValidateVariableID($errors, 'Bereiche[' . $index . '].' . $field, $bereich[$field] ?? 0);
+                $this->ValidateVariableID($errors, $context . ' → ' . $this->FieldLabel('Bereiche', $field), $bereich[$field] ?? 0);
             }
         }
 
@@ -794,19 +873,19 @@ HTML;
         foreach ($listFields as $listKey => $fields) {
             $items = $this->ReadJsonList($listKey);
             foreach ($items as $index => $item) {
-                $context = $listKey . '[' . $index . ']';
+                $context = $this->ConfigurationContext($listKey, $index, $item);
                 if (trim((string)($item['Name'] ?? '')) === '') {
-                    $errors[] = $context . ': Name darf nicht leer sein';
+                    $errors[] = $context . ': Name darf nicht leer sein. Prüfen: Kachelname ergänzen.';
                 }
                 $bereich = trim((string)($item['Bereich'] ?? ''));
                 if ($bereich !== '' && !in_array($bereich, $bereichNamen, true)) {
-                    $errors[] = $context . ': Bereich "' . $bereich . '" ist nicht definiert';
+                    $errors[] = $context . ': Bereich „' . $bereich . '“ ist nicht definiert. Prüfen: vorhandenen Bereich auswählen oder das Feld leeren.';
                 }
-                $this->ValidateLinkID($errors, $context . '.LinkID', $item['LinkID'] ?? 0);
+                $this->ValidateLinkID($errors, $context . ' → Navigation', $item['LinkID'] ?? 0);
                 foreach ($fields as $field) {
                     $this->ValidateVariableID(
                         $errors,
-                        $context . '.' . $field,
+                        $context . ' → ' . $this->FieldLabel($listKey, $field),
                         $item[$field] ?? 0,
                         $this->ExpectedVariableTypes($listKey, $field)
                     );
@@ -817,9 +896,9 @@ HTML;
         $outsideFields = ['AussenTempID', 'AussenTempMinID', 'AussenTempMaxID', 'AussenHumID',
             'WindRichtungID', 'WindBoenID', 'RegenRateID', 'RegenMenge24ID', 'TaupunktID', 'WetterwarnungID', 'UVID'];
         foreach ($outsideFields as $field) {
-            $this->ValidateVariableID($errors, $field, $this->ReadPropertyInteger($field));
+            $this->ValidateVariableID($errors, $this->ListLabel('Aussen') . ' → ' . $this->FieldLabel('Aussen', $field), $this->ReadPropertyInteger($field));
         }
-        $this->ValidateLinkID($errors, 'OutdoorLinkID', $this->ReadPropertyInteger('OutdoorLinkID'));
+        $this->ValidateLinkID($errors, $this->ListLabel('Aussen') . ' → Navigation', $this->ReadPropertyInteger('OutdoorLinkID'));
 
         if ($this->ReadPropertyFloat('TempWarnMin') >= $this->ReadPropertyFloat('TempWarnMax')) {
             $errors[] = 'Temperatur-Warnbereich: Untergrenze muss kleiner als Obergrenze sein';
@@ -832,6 +911,9 @@ HTML;
         }
         if ($this->ReadPropertyInteger('SoilWarnLevel') < 0 || $this->ReadPropertyInteger('SoilWarnLevel') > 100) {
             $errors[] = 'Bodenfeuchte-Warnung: Wert muss zwischen 0 und 100 % liegen';
+        }
+        if ($this->ReadPropertyBoolean('HideTitle') && !function_exists('IPS_SetHiddenTitle')) {
+            $errors[] = 'Titelanzeige: Ausblenden wird erst ab IP-Symcon 9.1 unterstützt';
         }
 
         foreach ($errors as $error) {

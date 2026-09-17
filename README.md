@@ -69,7 +69,7 @@ Visualisierungs-Modul für **IP-Symcon**, das einen kompakten Überblick über d
 
 ## 4. Einrichtung
 
-Die Konfiguration erfolgt in der Instanz über getrennte **Expansion-Panels** pro Kacheltyp. Im Panel **Anzeige / Grenzwerte** lassen sich Aktualisierungsintervall (Standard: 5 Minuten), Temperatur-, Luftfeuchte-, CO₂- und Bodenfeuchte-Warnwerte anpassen. Jede Liste enthält eine `Position`-Spalte zur Reihenfolgen-Steuerung – kleinere Zahlen erscheinen zuerst.
+Die Konfiguration erfolgt in der Instanz über getrennte **Expansion-Panels** pro Kacheltyp. Im Panel **Anzeige / Grenzwerte** lassen sich Aktualisierungsintervall (Standard: 5 Minuten), Temperatur-, Luftfeuchte-, CO₂- und Bodenfeuchte-Warnwerte anpassen. Ab IP-Symcon 9.1 kann dort außerdem der Titel ausgeblendet werden; in diesem Fall entfernt das Modul automatisch den zusätzlichen oberen Innenabstand. Jede Liste enthält eine `Position`-Spalte zur Reihenfolgen-Steuerung – kleinere Zahlen erscheinen zuerst.
 
 ### 4.1 Außen / Wetter
 
