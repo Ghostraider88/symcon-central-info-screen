@@ -1,3 +1,10 @@
+## 2.0.0-beta.2 - Kompakter Start und Schnellzugriffe
+
+- Kompakter Startmodus blendet redundanten Modul-Header, Footer und normalen Alles-in-Ordnung-Status aus.
+- Technikbereiche konnen beim Start eingeklappt werden; Bereiche erhalten einen konfigurierbaren Startzustand.
+- Schnellzugriffe fur Navigation, Variablenaktionen und Skript-/Routine-Aktionen mit optionaler Bestatigung.
+- Wetterdetails im Kompaktmodus optional einblendbar.
+
 # Changelog
 
 Alle wesentlichen Änderungen an diesem Projekt werden in dieser Datei dokumentiert.

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 class HomeScreen extends IPSModuleStrict
 {
-    private const MODULE_VERSION = '2.0.0-beta.1';
+    private const MODULE_VERSION = '2.0.0-beta.2';
     private const UPDATE_DEBOUNCE_MS = 250;
     private const TREND_PRIMARY_SECONDS = 2 * 3600;
     private const TREND_FALLBACK_SECONDS = 6 * 3600;
@@ -41,6 +41,7 @@ class HomeScreen extends IPSModuleStrict
         $this->RegisterPropertyString('Bewaesserung',     '[]');
         $this->RegisterPropertyString('Lueftungsanlagen', '[]');
         $this->RegisterPropertyString('Waermepumpen',     '[]');
+        $this->RegisterPropertyString('Schnellzugriffe',  '[]');
 
         $this->RegisterPropertyInteger('AussenTempID',    0);
         $this->RegisterPropertyInteger('AussenTempMinID', 0);
@@ -63,6 +64,9 @@ class HomeScreen extends IPSModuleStrict
         $this->RegisterPropertyInteger('CO2AlarmLevel', 1400);
         $this->RegisterPropertyInteger('SoilWarnLevel', 30);
         $this->RegisterPropertyBoolean('HideTitle', false);
+        $this->RegisterPropertyString('LayoutMode', 'compact');
+        $this->RegisterPropertyBoolean('ShowWeatherDetails', false);
+        $this->RegisterPropertyBoolean('CollapseTechnicalGroups', true);
 
         $this->SetVisualizationType(1);
 
@@ -159,6 +163,27 @@ class HomeScreen extends IPSModuleStrict
             }
         }
 
+
+        foreach ($this->ReadJsonList('Schnellzugriffe') as $action) {
+            $type = strtolower(trim((string)($action['Typ'] ?? 'navigation')));
+            if ($type === 'navigation') {
+                $id = (int)($action['LinkID'] ?? 0);
+                if ($id > 0) {
+                    $this->RegisterReference($id);
+                }
+            } elseif ($type === 'variable') {
+                $id = (int)($action['ActionID'] ?? 0);
+                if ($id > 0 && $this->VariableExistsCached($id)) {
+                    $varIDs[] = $id;
+                    $this->RegisterReference($id);
+                }
+            } elseif ($type === 'script') {
+                $id = (int)($action['ScriptID'] ?? 0);
+                if ($id > 0) {
+                    $this->RegisterReference($id);
+                }
+            }
+        }
         foreach (array_unique($varIDs) as $id) {
             $this->RegisterMessage($id, VM_UPDATE);
         }
@@ -199,6 +224,51 @@ class HomeScreen extends IPSModuleStrict
         $this->SendVisualizationUpdate($this->GetUpdatePayload(false, [], true));
     }
 
+
+    public function RequestAction(string $ident, mixed $value): void
+    {
+        if (!preg_match('/^QuickAction_(\d+)$/', $ident, $matches)) {
+            throw new InvalidArgumentException('Unbekannte Aktion: ' . $ident);
+        }
+
+        $index = (int)$matches[1];
+        $actions = $this->ReadJsonList('Schnellzugriffe');
+        if (!isset($actions[$index]) || !is_array($actions[$index])) {
+            throw new InvalidArgumentException('Schnellzugriff nicht gefunden: ' . $index);
+        }
+
+        $action = $actions[$index];
+        $type = strtolower(trim((string)($action['Typ'] ?? '')));
+        if ($type === 'script') {
+            $scriptID = (int)($action['ScriptID'] ?? 0);
+            if ($scriptID <= 0 || !IPS_ObjectExists($scriptID) || (int)(IPS_GetObject($scriptID)['ObjectType'] ?? -1) !== 3) {
+                throw new InvalidArgumentException('Skriptziel ist ungueltig.');
+            }
+            IPS_RunScript($scriptID);
+            return;
+        }
+
+        if ($type !== 'variable') {
+            throw new InvalidArgumentException('Schnellzugriff ist keine Aktion.');
+        }
+
+        $variableID = (int)($action['ActionID'] ?? 0);
+        if ($variableID <= 0 || !$this->VariableExistsCached($variableID)) {
+            throw new InvalidArgumentException('Aktionsvariable ist ungueltig.');
+        }
+
+        $variableInfo = $this->GetVariableInfoCached($variableID);
+        $variableType = (int)($variableInfo['VariableType'] ?? -1);
+        $typedValue = match ($variableType) {
+            0 => in_array(strtolower(trim((string)$value)), ['1', 'true', 'on', 'yes', 'an'], true),
+            1 => (int)$value,
+            2 => (float)str_replace(',', '.', (string)$value),
+            3 => (string)$value,
+            default => throw new InvalidArgumentException('Variablentyp wird nicht unterstuetzt.'),
+        };
+
+        RequestAction($variableID, $typedValue);
+    }
     // -------------------------------------------------------------------------
     // Visualization
     // -------------------------------------------------------------------------
@@ -257,6 +327,12 @@ class HomeScreen extends IPSModuleStrict
     {
         $safeFooter = $this->EscapeHtml($footer);
         $bodyTopPadding = $this->ReadPropertyBoolean('HideTitle') ? self::BODY_PADDING_WITHOUT_TITLE : self::BODY_PADDING_WITH_TITLE;
+        $layoutMode = strtolower(trim($this->ReadPropertyString('LayoutMode')));
+        if (!in_array($layoutMode, ['compact', 'standard'], true)) {
+            $layoutMode = 'compact';
+        }
+        $weatherDetailsClass = $this->ReadPropertyBoolean('ShowWeatherDetails') ? ' show-weather-details' : '';
+        $appClass = 'cis-app mode-' . $layoutMode . $weatherDetailsClass;
         return <<<HTML
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -271,9 +347,9 @@ class HomeScreen extends IPSModuleStrict
   .out-bar{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:9px 11px;border-radius:10px;margin-bottom:10px;background:var(--card-color);border:1px solid var(--cis-line);border-left:3px solid var(--accent-color);box-shadow:0 1px 2px rgba(0,0,0,.04);}.out-theme-freeze{border-left-color:#5b9bd5;}.out-theme-cold{border-left-color:#82bed4;}.out-theme-cool{border-left-color:#64a978;}.out-theme-mild{border-left-color:var(--cis-ok);}.out-theme-warm{border-left-color:#d58b20;}.out-theme-hot{border-left-color:var(--cis-error);}.out-icon{font-size:1.35em;flex-shrink:0;line-height:1;margin-right:9px;}.out-main{display:flex;align-items:baseline;gap:6px;flex-shrink:0;padding-right:12px;margin-right:4px;border-right:1px solid var(--cis-line);}.out-label{font-size:.68em;font-weight:700;color:var(--cis-muted);text-transform:uppercase;letter-spacing:.07em;}.out-temp{font-size:1.18em;font-weight:700;color:var(--content-color);line-height:1;}.out-cold{color:#5b9bd5;}.out-cool{color:#4a90b8;}.out-warm{color:#c97000;}.out-hot{color:var(--cis-error);}.out-seg{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:0 7px;font-size:.80em;color:var(--cis-muted);border-right:1px solid var(--cis-line);white-space:nowrap;}.out-seg:last-child{border-right:none;}.out-comfort{font-size:.96em;}.out-range{display:flex;gap:6px;}.out-lo{color:#4a90b8;font-weight:700;}.out-hi{color:var(--cis-error);font-weight:700;}.out-bar.clickable{cursor:pointer;}.out-bar.clickable:hover{border-color:var(--accent-color);}.out-warn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:.74em;font-weight:700;}.out-warn-0{background:rgba(47,158,88,.14);color:var(--cis-ok);}.out-warn-1{background:rgba(185,121,22,.16);color:var(--cis-warn);}.out-warn-2,.out-warn-3,.out-warn-4{background:rgba(200,69,60,.14);color:var(--cis-error);}.out-warn-10,.out-warn-11{background:rgba(123,31,162,.14);color:#7b1fa2;}.out-warn-seg{flex-direction:column;align-items:flex-start;gap:3px;}.out-uv{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:.74em;font-weight:700;background:var(--cis-soft);color:var(--cis-muted);}.uv-low{color:var(--cis-ok);}.uv-mid,.uv-high{color:var(--cis-warn);}.uv-veryhigh{color:var(--cis-error);}.uv-extreme{color:#7b1fa2;}.out-row2{display:flex;flex-wrap:wrap;width:100%;gap:4px;margin-top:7px;padding-top:7px;border-top:1px solid var(--cis-line);}.out-row2 .out-seg{flex:0 1 auto;padding:0 5px;font-size:.78em;border-right:0;}
   .stat-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;margin-bottom:10px;border:1px solid var(--cis-line);border-radius:10px;background:var(--cis-soft);font-size:.82em;}.stat-label{display:flex;align-items:baseline;gap:7px;min-width:0;}.stat-title{font-weight:700;color:var(--content-color);}.stat-subtitle{color:var(--cis-muted);font-size:.9em;}.stat-ok{color:var(--cis-ok);font-weight:700;white-space:nowrap;}.stat-items{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap;}.stat-item{display:inline-flex;align-items:center;gap:3px;white-space:nowrap;}.stat-al{display:flex;align-items:center;gap:3px;}.empty{color:var(--cis-muted);padding:12px;font-size:.9em;}.config-error{color:var(--cis-error);background:rgba(200,69,60,.10);border:1px solid rgba(200,69,60,.30);border-left:3px solid var(--cis-error);border-radius:8px;padding:8px 10px;margin-bottom:9px;font-size:.82em;}.config-error ul{margin-left:18px;}.footer{margin-top:9px;font-size:.68em;color:var(--cis-faint);text-align:right;}
   .fa-solid{font-style:normal;display:inline-block;line-height:1;}.fa-solid::before{font-family:system-ui,'Segoe UI Symbol','Apple Symbols','Noto Sans',sans-serif;}.fa-check::before{content:"✓";}.fa-lightbulb::before{content:"◉";}.fa-door-open::before{content:"⊏";}.fa-door-closed::before{content:"⊐";}.fa-temperature-half::before{content:"▾";}.fa-temperature-high::before{content:"▴";}.fa-wind::before{content:"≈";}.fa-bars::before{content:"≡";}.fa-plug::before{content:"⊓";}.fa-car::before{content:"▶";}.fa-bolt::before{content:"↯";}.fa-road::before{content:"↕";}.fa-sun::before{content:"✦";}.fa-house::before{content:"⌂";}.fa-plug-circle-bolt::before{content:"⊛";}.fa-battery-half::before{content:"▬";}.fa-sliders::before{content:"≣";}.fa-circle-half-stroke::before{content:"◑";}.fa-fan::before{content:"✧";}.fa-droplet::before{content:"◉";}.fa-clock::before{content:"◔";}.fa-hourglass-half::before{content:"▽";}.fa-chart-simple::before{content:"▲";}.fa-calendar::before{content:"⊟";}.fa-seedling::before{content:"✿";}.fa-arrow-right-to-bracket::before{content:"→";}.fa-arrow-right-from-bracket::before{content:"←";}.fa-gear::before{content:"⚙";font-variant-emoji:text;}.fa-compass::before{content:"⊕";}.fa-cloud-rain::before{content:"≈";}.fa-cloud-showers-heavy::before{content:"≋";}.fa-shield-halved::before{content:"◈";}.fa-triangle-exclamation::before{content:"△";}.fa-arrow-right::before{content:"→";}.fa-arrow-trend-up::before{content:"↗";}.fa-arrow-trend-down::before{content:"↘";}
-  @media(max-width:520px){body{font-size:13px;padding-left:4px;padding-right:4px;}.cis-head{padding-left:3px;padding-right:3px;}.cis-head-meta{font-size:.66em;}.cis-kicker{font-size:.62em;}.cis-title{font-size:1em;}.grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr));gap:7px;}.card{padding:9px 10px;}.out-bar{padding:8px 9px;}.out-main{flex-basis:100%;border-right:0;padding-right:0;margin-right:0;padding-bottom:7px;margin-bottom:5px;border-bottom:1px solid var(--cis-line);}.out-seg{flex:0 1 auto;border-right:0;padding:2px 6px 0;}.out-seg:not(:last-child){border-right:1px solid var(--cis-line);}.stat-bar{align-items:flex-start;flex-direction:column;gap:5px;}.stat-items{justify-content:flex-start;}.grp-chips{display:none;}.grp-name{font-size:.9em;}}
+  .quick-actions{display:flex;align-items:center;gap:6px;overflow-x:auto;margin:0 0 8px;padding:1px 0 2px;scrollbar-width:thin;}.quick-action{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;min-height:31px;padding:5px 10px;border:1px solid var(--cis-line);border-radius:999px;background:var(--card-color);color:var(--content-color);font-size:.79em;cursor:pointer;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.04);}.quick-action:hover,.quick-action:focus-visible{border-color:var(--accent-color);color:var(--accent-color);outline:2px solid transparent;}.quick-action.is-action{border-color:rgba(0,190,165,.40);}.quick-action.is-danger{border-color:rgba(200,69,60,.42);}.quick-action-icon{font-size:1.1em;line-height:1;color:var(--accent-color);}.mode-compact .cis-head{display:none;}.mode-compact .footer{display:none;}.mode-compact .stat-normal{display:none;}.mode-compact .quick-actions{margin-bottom:7px;}.mode-compact .out-bar{padding:7px 9px;margin-bottom:7px;}.mode-compact .grp{margin-bottom:8px;}.mode-compact .grp+.grp{margin-top:8px;}.mode-compact .grp-hdr{margin-bottom:5px;}.mode-compact .grp-toggle{padding:7px 8px;}.mode-compact .card{padding:8px 9px;border-radius:8px;}.mode-compact .grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:6px;}.mode-compact:not(.show-weather-details) .out-detail{display:none;}.mode-compact:not(.show-weather-details) .out-row2{display:none;}  @media(max-width:520px){body{font-size:13px;padding-left:4px;padding-right:4px;}.cis-head{padding-left:3px;padding-right:3px;}.cis-head-meta{font-size:.66em;}.cis-kicker{font-size:.62em;}.cis-title{font-size:1em;}.grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr));gap:7px;}.card{padding:9px 10px;}.out-bar{padding:8px 9px;}.out-main{flex-basis:100%;border-right:0;padding-right:0;margin-right:0;padding-bottom:7px;margin-bottom:5px;border-bottom:1px solid var(--cis-line);}.out-seg{flex:0 1 auto;border-right:0;padding:2px 6px 0;}.out-seg:not(:last-child){border-right:1px solid var(--cis-line);}.stat-bar{align-items:flex-start;flex-direction:column;gap:5px;}.stat-items{justify-content:flex-start;}.grp-chips{display:none;}.grp-name{font-size:.9em;}}
 </style>
-<div id="cis-app" class="cis-app">
+<div id="cis-app" class="{$appClass}">
   <div class="cis-head"><div class="cis-head-main"><span class="cis-head-icon" aria-hidden="true">⌂</span><div><div class="cis-kicker">Central Info Screen</div><div class="cis-title">Hausübersicht</div></div></div><div class="cis-head-meta"><span class="cis-live-dot" aria-hidden="true"></span><span>Live-Übersicht</span></div></div>
   <div id="cis-content">{$content}</div>
   <div id="cis-footer" class="footer">{$safeFooter}</div>
@@ -285,7 +361,7 @@ class HomeScreen extends IPSModuleStrict
   function setGroupCollapsed(group,collapsed){group.classList.toggle('is-collapsed',collapsed);var toggle=group.querySelector('[data-cis-toggle]');if(toggle)toggle.setAttribute('aria-expanded',collapsed?'false':'true');}
   function restoreCollapsed(){document.querySelectorAll('[data-cis-group]').forEach(function(group){var key=group.getAttribute('data-cis-group');if(collapsedGroups[key])setGroupCollapsed(group,true);});}
   function replacePart(id,html){var current=document.getElementById(id);if(!current||typeof html!=='string')return;var wasCollapsed=current.classList.contains('is-collapsed');var template=document.createElement('template');template.innerHTML=html.trim();var replacement=template.content.firstElementChild;if(!replacement)return;current.replaceWith(replacement);if(wasCollapsed)setGroupCollapsed(replacement,true);}
-  document.addEventListener('click',function(event){var toggle=event.target.closest?event.target.closest('[data-cis-toggle]'):null;if(!toggle)return;var group=document.getElementById('cis-group-'+toggle.getAttribute('data-cis-toggle'));if(!group)return;var collapsed=!group.classList.contains('is-collapsed');collapsedGroups[toggle.getAttribute('data-cis-toggle')]=collapsed;setGroupCollapsed(group,collapsed);});
+  document.addEventListener('click',function(event){var action=event.target.closest?event.target.closest('[data-cis-action]'):null;if(action){if(action.getAttribute('data-cis-confirm')==='1'&&!window.confirm(action.getAttribute('data-cis-confirm-text')||'Aktion ausfuehren?'))return;var ident=action.getAttribute('data-cis-action');var value=action.getAttribute('data-cis-value')||'';if(typeof requestAction==='function')requestAction(ident,value);return;}var toggle=event.target.closest?event.target.closest('[data-cis-toggle]'):null;if(!toggle)return;var group=document.getElementById('cis-group-'+toggle.getAttribute('data-cis-toggle'));if(!group)return;var collapsed=!group.classList.contains('is-collapsed');collapsedGroups[toggle.getAttribute('data-cis-toggle')]=collapsed;setGroupCollapsed(group,collapsed);});
   window.handleMessage=function(data){try{var d=typeof data==='string'?JSON.parse(data):data;var content=document.getElementById('cis-content');var footer=document.getElementById('cis-footer');if(d&&d.type==='full'&&d.content!==undefined&&content){rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.type==='delta'&&d.parts){if(d.parts.outdoor!==undefined)replacePart('cis-outdoor',d.parts.outdoor);if(d.parts.globalStatus!==undefined)replacePart('cis-global-status',d.parts.globalStatus);if(d.parts.groups)Object.keys(d.parts.groups).forEach(function(key){replacePart('cis-group-'+key,d.parts.groups[key]);});}if(d&&!d.type&&d.content!==undefined&&content){rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.footer!==undefined&&footer)footer.textContent=d.footer;}catch(e){console.warn('Central Info Screen: ungültige Aktualisierungsdaten',e);}};
 })();
 </script>
@@ -327,6 +403,12 @@ HTML;
                     'caption' => 'Anzeige / Grenzwerte',
                     'items'   => [
                         ['type' => 'CheckBox', 'name' => 'HideTitle', 'caption' => 'Titel ausblenden und oberen Abstand entfernen'],
+                        ['type' => 'Select', 'name' => 'LayoutMode', 'caption' => 'Startansicht', 'options' => [
+                            ['caption' => 'Kompakt - Status zuerst', 'value' => 'compact'],
+                            ['caption' => 'Standard - alle Details', 'value' => 'standard'],
+                        ]],
+                        ['type' => 'CheckBox', 'name' => 'ShowWeatherDetails', 'caption' => 'Wetterdetails auch im Kompaktmodus anzeigen'],
+                        ['type' => 'CheckBox', 'name' => 'CollapseTechnicalGroups', 'caption' => 'Technikbereiche beim Start einklappen'],
                         ['type' => 'NumberSpinner', 'name' => 'RefreshIntervalMinutes', 'caption' => 'Aktualisierungsintervall (Minuten)', 'minimum' => 1, 'maximum' => 60],
                         ['type' => 'NumberSpinner', 'name' => 'TempWarnMin', 'caption' => 'Temperatur-Warnung ab (°C)', 'minimum' => -50, 'maximum' => 80, 'digits' => 1],
                         ['type' => 'NumberSpinner', 'name' => 'TempWarnMax', 'caption' => 'Temperatur-Warnung über (°C)', 'minimum' => -50, 'maximum' => 80, 'digits' => 1],
@@ -335,6 +417,34 @@ HTML;
                         ['type' => 'NumberSpinner', 'name' => 'CO2WarnLevel', 'caption' => 'CO₂-Warnung ab (ppm)', 'minimum' => 0, 'maximum' => 10000],
                         ['type' => 'NumberSpinner', 'name' => 'CO2AlarmLevel', 'caption' => 'CO₂-Alarm über (ppm)', 'minimum' => 0, 'maximum' => 10000],
                         ['type' => 'NumberSpinner', 'name' => 'SoilWarnLevel', 'caption' => 'Bodenfeuchte-Warnung unter (%)', 'minimum' => 0, 'maximum' => 100],
+                    ],
+                ],
+                [
+                    'type'    => 'ExpansionPanel',
+                    'caption' => 'Start / Schnellzugriffe',
+                    'items'   => [
+                        [
+                            'type'     => 'List',
+                            'name'     => 'Schnellzugriffe',
+                            'caption'  => 'Navigation und OneClick-Aktionen',
+                            'add'      => true,
+                            'delete'   => true,
+                            'rowCount' => 6,
+                            'columns'  => [
+                                ['caption' => 'Pos.', 'name' => 'Position', 'width' => '45px', 'add' => 0, 'edit' => ['type' => 'NumberSpinner', 'minimum' => 0, 'maximum' => 999]],
+                                ['caption' => 'Name', 'name' => 'Name', 'width' => '120px', 'add' => 'Schnellzugriff', 'edit' => ['type' => 'ValidationTextBox']],
+                                ['caption' => 'Typ', 'name' => 'Typ', 'width' => '120px', 'add' => 'navigation', 'edit' => ['type' => 'Select', 'options' => [
+                                    ['caption' => 'Navigation', 'value' => 'navigation'],
+                                    ['caption' => 'Variablenaktion', 'value' => 'variable'],
+                                    ['caption' => 'Skript / Routine', 'value' => 'script'],
+                                ]]],
+                                ['caption' => 'Ziel Navigation', 'name' => 'LinkID', 'width' => '125px', 'add' => 0, 'edit' => ['type' => 'SelectObject']],
+                                ['caption' => 'Ziel Variable', 'name' => 'ActionID', 'width' => '125px', 'add' => 0, 'edit' => ['type' => 'SelectVariable']],
+                                ['caption' => 'Wert', 'name' => 'ActionValue', 'width' => '85px', 'add' => '', 'edit' => ['type' => 'ValidationTextBox']],
+                                ['caption' => 'Ziel Skript', 'name' => 'ScriptID', 'width' => '125px', 'add' => 0, 'edit' => ['type' => 'SelectObject']],
+                                ['caption' => 'Bestaetigung', 'name' => 'Bestaetigung', 'width' => '80px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                            ],
+                        ],
                     ],
                 ],
                 [
@@ -368,6 +478,7 @@ HTML;
                         'columns'  => [
                             ['caption' => 'Pos.',                'name' => 'Position',  'width' => '50px',  'add' => 0,               'edit' => ['type' => 'NumberSpinner', 'minimum' => 0, 'maximum' => 999]],
                             ['caption' => 'Name',                'name' => 'Name',      'width' => '120px', 'add' => 'Neues Stockwerk','edit' => ['type' => 'ValidationTextBox']],
+                            ['caption' => 'Start geschlossen', 'name' => 'StartCollapsed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
                             ['caption' => 'Navigation (Klick)',  'name' => 'LinkID',    'width' => '150px', 'add' => 0,               'edit' => ['type' => 'SelectObject']],
                             ['caption' => 'Licht (Anzahl/Bool)', 'name' => 'LichtID',   'width' => '140px', 'add' => 0,               'edit' => ['type' => 'SelectVariable']],
                             ['caption' => 'Fenster (Anzahl)',    'name' => 'FensterID', 'width' => '140px', 'add' => 0,               'edit' => ['type' => 'SelectVariable']],
@@ -717,6 +828,7 @@ HTML;
             'Bewaesserung' => 'Bewässerung',
             'Lueftungsanlagen' => 'Lüftungsanlagen',
             'Waermepumpen' => 'Warmwasser-Wärmepumpen',
+            'Schnellzugriffe' => 'Schnellzugriffe',
             'Aussen' => 'Außen / Wetter',
         ][$listKey] ?? $listKey;
     }
@@ -738,6 +850,7 @@ HTML;
             'Bewaesserung' => ['LinkID' => 'Navigation', 'AktivID' => 'Aktivstatus', 'NextStartID' => 'Nächster Start', 'LaufzeitID' => 'Restlaufzeit', 'BodenID' => 'Bodenfeuchte', 'BedarfID' => 'Bedarf', 'TagesRestID' => 'Tagesrest'],
             'Lueftungsanlagen' => ['LinkID' => 'Navigation', 'LuefterID' => 'Lüfterstufe', 'LueftModusID' => 'Lüftermodus', 'FrischluftID' => 'Frischlufttemperatur', 'ZuluftID' => 'Zulufttemperatur', 'BetriebsartID' => 'Betriebsart'],
             'Waermepumpen' => ['LinkID' => 'Navigation', 'TempMitteID' => 'Temperatur Mitte', 'TempObenID' => 'Temperatur oben', 'KompressorID' => 'Kompressorstatus', 'HeizstabID' => 'Heizstabstatus'],
+            'Schnellzugriffe' => ['LinkID' => 'Navigation', 'ActionID' => 'Aktionsvariable', 'ScriptID' => 'Skript'],
             'Aussen' => [
                 'AussenTempID' => 'Außentemperatur', 'AussenTempMinID' => 'Tages-Tiefstwert', 'AussenTempMaxID' => 'Tages-Höchstwert',
                 'AussenHumID' => 'Außenluftfeuchte', 'WindRichtungID' => 'Windrichtung', 'WindBoenID' => 'Windböen', 'RegenRateID' => 'Regenrate',
@@ -894,6 +1007,41 @@ HTML;
             }
         }
 
+        $quickActions = $this->ReadJsonList('Schnellzugriffe');
+        foreach ($quickActions as $index => $action) {
+            $context = $this->ConfigurationContext('Schnellzugriffe', $index, $action);
+            $type = strtolower(trim((string)($action['Typ'] ?? '')));
+            if (trim((string)($action['Name'] ?? '')) === '') {
+                $errors[] = $context . ': Name darf nicht leer sein.';
+            }
+            if ($type === 'navigation') {
+                $this->ValidateLinkID($errors, $context . ' - Navigation', $action['LinkID'] ?? 0);
+            } elseif ($type === 'variable') {
+                $this->ValidateVariableID($errors, $context . ' - Aktionsvariable', $action['ActionID'] ?? 0);
+                $actionID = (int)($action['ActionID'] ?? 0);
+                if ($actionID > 0 && $this->VariableExistsCached($actionID) && function_exists('HasAction') && !HasAction($actionID)) {
+                    $errors[] = $context . ': Die Zielvariable besitzt keine Aktion.';
+                }
+                $rawValue = trim((string)($action['ActionValue'] ?? ''));
+                $typeInfo = $actionID > 0 && $this->VariableExistsCached($actionID) ? (int)($this->GetVariableInfoCached($actionID)['VariableType'] ?? -1) : -1;
+                if ($typeInfo === 0 && !in_array(strtolower($rawValue), ['0', '1', 'false', 'true', 'off', 'on', 'nein', 'ja', 'aus', 'an'], true)) {
+                    $errors[] = $context . ': Boolean-Wert muss 0/1, aus/an oder false/true sein.';
+                }
+                if ($typeInfo === 1 && filter_var($rawValue, FILTER_VALIDATE_INT) === false) {
+                    $errors[] = $context . ': Integer-Wert ist ungueltig.';
+                }
+                if ($typeInfo === 2 && !is_numeric(str_replace(',', '.', $rawValue))) {
+                    $errors[] = $context . ': Float-Wert ist ungueltig.';
+                }
+            } elseif ($type === 'script') {
+                $scriptID = (int)($action['ScriptID'] ?? 0);
+                if ($scriptID <= 0 || !IPS_ObjectExists($scriptID) || (int)(IPS_GetObject($scriptID)['ObjectType'] ?? -1) !== 3) {
+                    $errors[] = $context . ': Ziel muss ein vorhandenes Skript sein.';
+                }
+            } else {
+                $errors[] = $context . ': Typ muss Navigation, Variablenaktion oder Skript / Routine sein.';
+            }
+        }
         $listFields = [
             'Raeume' => ['LichtID', 'FensterID', 'TempID', 'HumID', 'CO2ID', 'Geraet1ID', 'Geraet2ID', 'Geraet3ID', 'Geraet4ID'],
             'Fahrzeuge' => ['SoCID', 'RangeID', 'ChargingID', 'ChargeMinID', 'ChargePowerID', 'StatusID'],
@@ -1107,6 +1255,7 @@ HTML;
         }
 
         $html  = $data['configurationWarning'];
+        $html .= $this->BuildQuickActions();
         $html .= "<div id='cis-outdoor'>" . $this->BuildOutdoorBar() . "</div>";
         $html .= "<div id='cis-global-status'>" . $this->BuildGlobalStatus($data['nurRaeume']) . "</div>";
 
@@ -1130,8 +1279,13 @@ HTML;
         $groupKey = $this->BuildDomKey('group', $bereichName);
         $raeumeFuerHeader = array_values(array_filter($gruppeItems, fn($x) => ($x['__typ'] ?? '') === 'raum'));
 
-        $html  = "<div class='grp' id='cis-group-{$groupKey}' data-cis-group='{$groupKey}'>";
-        $html .= $this->BuildBereichHeader($bereichName, $bereichDef, $raeumeFuerHeader, $groupKey);
+        $startCollapsed = (bool)($bereichDef['StartCollapsed'] ?? false);
+        if ($this->ReadPropertyBoolean('CollapseTechnicalGroups') && $this->IsTechnicalGroup($gruppeItems)) {
+            $startCollapsed = true;
+        }
+        $groupClass = $startCollapsed ? ' is-collapsed' : '';
+        $html  = "<div class='grp{$groupClass}' id='cis-group-{$groupKey}' data-cis-group='{$groupKey}'>";
+        $html .= $this->BuildBereichHeader($bereichName, $bereichDef, $raeumeFuerHeader, $groupKey, $startCollapsed);
 
         if (!empty($gruppeItems)) {
             $html .= "<div id='cis-grid-{$groupKey}' class='grid' data-cis-grid='{$groupKey}'>";
@@ -1142,6 +1296,19 @@ HTML;
         }
 
         return $html . "</div>";
+    }
+
+    private function IsTechnicalGroup(array $items): bool
+    {
+        if ($items === []) {
+            return false;
+        }
+        foreach ($items as $item) {
+            if (($item['__typ'] ?? '') === 'raum') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private function BuildDeltaParts(array $bereiche, array $raeume, array $updatedIDs): array
@@ -1261,6 +1428,60 @@ HTML;
         return $prefix . '-' . substr(hash('sha256', $prefix . '|' . $value), 0, 16);
     }
 
+    private function BuildQuickActions(): string
+    {
+        $actions = $this->ReadJsonList('Schnellzugriffe');
+        if ($actions === []) {
+            return '';
+        }
+        foreach ($actions as $actionIndex => &$action) {
+            $action['__actionIndex'] = $actionIndex;
+        }
+        unset($action);
+        $this->SortByPosition($actions);
+        $html = "<div class='quick-actions' aria-label='Schnellzugriffe'>";
+        foreach ($actions as $index => $action) {
+            $name = trim((string)($action['Name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+            $type = strtolower(trim((string)($action['Typ'] ?? 'navigation')));
+            $label = $this->EscapeHtml($name);
+            $confirm = !empty($action['Bestaetigung']) || !empty($action['Confirm']);
+            $confirmText = $this->EscapeHtml($name . ' ausfuehren?');
+            if ($type === 'navigation') {
+                $linkID = (int)($action['LinkID'] ?? 0);
+                if ($linkID <= 0 || !IPS_ObjectExists($linkID)) {
+                    continue;
+                }
+                $html .= "<button type='button' class='quick-action' title='{$label}' aria-label='{$label}' onclick='openObject({$linkID})'><span class='quick-action-icon' aria-hidden='true'>&#9889;</span><span>{$label}</span></button>";
+                continue;
+            }
+            if ($type === 'variable') {
+                $targetID = (int)($action['ActionID'] ?? 0);
+                if ($targetID <= 0 || !$this->VariableExistsCached($targetID)) {
+                    continue;
+                }
+                $ident = 'QuickAction_' . (int)($action['__actionIndex'] ?? $index);
+                $value = $this->EscapeHtml((string)($action['ActionValue'] ?? ''));
+                $confirmAttrs = $confirm ? " data-cis-confirm='1' data-cis-confirm-text='{$confirmText}'" : '';
+                $dangerClass = $confirm ? ' is-danger' : '';
+                $html .= "<button type='button' class='quick-action is-action{$dangerClass}' data-cis-action='{$ident}' data-cis-value='{$value}'{$confirmAttrs} title='{$label}' aria-label='{$label}'><span class='quick-action-icon' aria-hidden='true'>&#9654;</span><span>{$label}</span></button>";
+                continue;
+            }
+            if ($type === 'script') {
+                $scriptID = (int)($action['ScriptID'] ?? 0);
+                if ($scriptID <= 0 || !IPS_ObjectExists($scriptID) || (int)(IPS_GetObject($scriptID)['ObjectType'] ?? -1) !== 3) {
+                    continue;
+                }
+                $ident = 'QuickAction_' . (int)($action['__actionIndex'] ?? $index);
+                $confirmAttrs = $confirm ? " data-cis-confirm='1' data-cis-confirm-text='{$confirmText}'" : '';
+                $dangerClass = $confirm ? ' is-danger' : '';
+                $html .= "<button type='button' class='quick-action is-action{$dangerClass}' data-cis-action='{$ident}' data-cis-value=''{$confirmAttrs} title='{$label}' aria-label='{$label}'><span class='quick-action-icon' aria-hidden='true'>&#9654;</span><span>{$label}</span></button>";
+            }
+        }
+        return $html === "<div class='quick-actions' aria-label='Schnellzugriffe'>" ? '' : $html . '</div>';
+    }
     private function BuildOutdoorBar(): string
     {
         $tempID        = (int)$this->ReadPropertyInteger('AussenTempID');
@@ -1373,13 +1594,13 @@ HTML;
         if ($minStr !== '' || $maxStr !== '') {
             $range  = $minStr !== '' ? "<span class='out-lo'>↓{$minStr}</span>" : '';
             $range .= $maxStr !== '' ? "<span class='out-hi'>↑{$maxStr}</span>" : '';
-            $html  .= "<div class='out-seg out-range'>{$range}</div>";
+            $html  .= "<div class='out-seg out-range out-detail'>{$range}</div>";
         }
         if ($hum !== null) {
-            $html .= "<div class='out-seg'><span class='out-hum'>💧 {$hum}%</span></div>";
+            $html .= "<div class='out-seg out-detail'><span class='out-hum'>💧 {$hum}%</span></div>";
         }
         if ($dewPoint !== '') {
-            $html .= "<div class='out-seg'><span class='out-dew'>{$dewPoint}</span></div>";
+            $html .= "<div class='out-seg out-detail'><span class='out-dew'>{$dewPoint}</span></div>";
         }
         $html .= $warnHtml;
 
@@ -1398,7 +1619,7 @@ HTML;
             $row2 .= "<div class='out-seg'><i class='fa-solid fa-cloud-showers-heavy' style='margin-right:3px'></i>24h: " . $this->EscapeHtml($this->GetCachedFormattedValue($regen24ID)) . "</div>";
         }
         if ($row2 !== '') {
-            $html .= "<div class='out-row2'>{$row2}</div>";
+            $html .= "<div class='out-row2 out-detail'>{$row2}</div>";
         }
 
         $html .= "</div>";
@@ -1498,7 +1719,7 @@ HTML;
         return false;
     }
 
-    private function BuildBereichHeader(string $name, ?array $def, array $raeume = [], string $groupKey = ''): string
+    private function BuildBereichHeader(string $name, ?array $def, array $raeume = [], string $groupKey = '', bool $collapsed = false): string
     {
         if ($name === '' && $def === null) {
             return '';
@@ -1575,8 +1796,9 @@ HTML;
             ? "<button type='button' class='grp-nav' title='Bereich öffnen' aria-label='Bereich öffnen' onclick='event.stopPropagation();openObject({$linkID})'>↗</button>"
             : '';
 
+        $expanded = $collapsed ? 'false' : 'true';
         return "<div class='grp-hdr'>"
-            . "<button type='button' class='grp-toggle' data-cis-toggle='{$safeGroupKey}' aria-controls='cis-grid-{$safeGroupKey}' aria-expanded='true'>"
+            . "<button type='button' class='grp-toggle' data-cis-toggle='{$safeGroupKey}' aria-controls='cis-grid-{$safeGroupKey}' aria-expanded='$expanded'>"
             . "<span class='grp-chevron' aria-hidden='true'>⌄</span>"
             . "<span class='grp-name'>{$displayName}</span>"
             . ($stats !== '' ? "<span class='grp-chips'>{$stats}</span>" : '')

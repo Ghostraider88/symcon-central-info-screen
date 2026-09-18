@@ -9,7 +9,7 @@ Visualisierungs-Kachel für IP-Symcon ≥ 8.2 — zeigt Räume, E-Autos, Energie
 | Modul-GUID | `{D2E7F94A-3B16-4C8E-A591-7F0D2B3E5A8C}` |
 | Präfix | `HomeScreen` |
 | Typ | Visualisierung (Modultyp 3, Tile-Typ 1) |
-| Version | 2.0.0-beta.1 |
+| Version | 2.0.0-beta.2 |
 
 ## Konfiguration
 
