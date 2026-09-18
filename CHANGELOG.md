@@ -1,6 +1,14 @@
 # Changelog
 
 Alle wesentlichen Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
+## 2.0.0-beta.1 – Visualisierungs-Beta
+
+- neue Kopfzeile für die Hausübersicht mit Live-Status
+- gleichmäßiges responsives Karten-Grid statt variabler Flex-Karten
+- überarbeitete Statusfarben, Chips und Wetterdarstellung
+- Bereiche können ein- und ausgeklappt werden; der Zustand bleibt bei Teilaktualisierungen erhalten
+- klickbare Karten sind zusätzlich per Tastatur bedienbar
+- bestehende Konfiguration und Delta-Update-Payloads bleiben kompatibel
 Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.1.0/).
 
 ## [1.0.3] – 2026-09-17

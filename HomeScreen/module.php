@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 class HomeScreen extends IPSModuleStrict
 {
-    private const MODULE_VERSION = '1.0.3';
+    private const MODULE_VERSION = '2.0.0-beta.1';
     private const UPDATE_DEBOUNCE_MS = 250;
     private const TREND_PRIMARY_SECONDS = 2 * 3600;
     private const TREND_FALLBACK_SECONDS = 6 * 3600;
@@ -256,198 +256,41 @@ class HomeScreen extends IPSModuleStrict
     private function RenderTile(string $content, string $footer): string
     {
         $safeFooter = $this->EscapeHtml($footer);
-        $bodyTopPadding = $this->ReadPropertyBoolean('HideTitle')
-            ? self::BODY_PADDING_WITHOUT_TITLE
-            : self::BODY_PADDING_WITH_TITLE;
-
+        $bodyTopPadding = $this->ReadPropertyBoolean('HideTitle') ? self::BODY_PADDING_WITHOUT_TITLE : self::BODY_PADDING_WITH_TITLE;
         return <<<HTML
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<script src="/icons.js"></script>
 <style>
-  /* Poppins – Symcon Tile Assets */
   @font-face{font-family:'Poppins';src:url('/tile/assets/google_fonts/Poppins-Regular.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap;}
   @font-face{font-family:'Poppins';src:url('/tile/assets/google_fonts/Poppins-Bold.ttf') format('truetype');font-weight:700;font-style:normal;font-display:swap;}
-  /* Symcon stellt automatisch bereit: --accent-color, --content-color, --card-color */
-  :root{--text-muted:#999;--group-bg:rgba(0,0,0,0.04);--div-clr:rgba(0,0,0,0.08);--footer:#bbb;}
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:transparent;color:var(--content-color);font-family:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:{$bodyTopPadding} 8px 8px;font-size:13px;}
-  .grp{margin-bottom:8px;}
-  .grp+.grp{margin-top:10px;}
-  .grp-hdr{display:flex;align-items:center;gap:6px;padding:4px 7px;background:var(--group-bg);border-radius:5px;margin-bottom:5px;border-left:3px solid var(--accent-color);}
-  .grp-hdr.clickable{cursor:pointer;}
-  .grp-hdr.clickable:hover{filter:brightness(0.95);}
-  .grp-name{font-size:0.80em;font-weight:600;color:var(--content-color);text-transform:uppercase;letter-spacing:0.05em;flex:1;}
-  .grp-chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-  .grp-stat{display:inline-flex;align-items:center;gap:2px;font-size:0.80em;}
-  .chip-y{background:rgba(255,152,0,0.20);color:#c97000;}
-  .chip-r{background:rgba(244,67,54,0.17);color:#c62828;}
-  .grid{display:flex;flex-wrap:wrap;gap:6px;}
-  .card{background:var(--card-color);border-radius:6px;padding:6px 9px;flex:0 1 auto;min-width:120px;max-width:170px;border:1px solid var(--accent-color);border-left:3px solid transparent;}
-  .card.clickable{cursor:pointer;}
-  .card.clickable:hover{opacity:0.88;}
-  .s-alert{border-left-color:#f44336;}
-  .s-warn{border-left-color:#ff9800;}
-  .s-charging{border-left-color:#2196f3;}
-  .s-active{border-left-color:#4caf50;}
-  .s-dehumid{border-left-color:#00bcd4;}
-  .s-inactive{border-left-color:#9e9e9e;}
-  .c-head{display:flex;justify-content:space-between;align-items:baseline;gap:4px;margin-bottom:4px;}
-  .c-name{font-weight:500;color:var(--content-color);font-size:0.95em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .c-temp{font-weight:500;font-size:0.90em;white-space:nowrap;flex-shrink:0;}
-  .p-row{display:flex;gap:4px;margin-top:2px;min-height:1.4em;}
-  .p-cell{display:flex;align-items:center;gap:2px;font-size:0.85em;flex:1;min-width:0;white-space:nowrap;overflow:hidden;}
-  .p-ico{font-size:0.85em;flex-shrink:0;width:1.2em;text-align:center;}
-  .p-none{color:var(--text-muted);font-size:0.82em;}
-  .ico-muted{color:var(--text-muted);}
-  .ico-on{color:#f5a623;}
-  .ico-warn{color:#e65c00;}
-  .ico-alert{color:#e53935;}
-  .ico-charging{color:#2196f3;}
-  .ico-solar{color:#f5a623;}
-  .ico-grid-in{color:#4caf50;}
-  .ico-grid-out{color:#e53935;}
-  .ico-active{color:#4caf50;}
-  .al-r{color:#e53935;}
-  .al-y{color:#e65c00;}
-  .al-g{color:#4caf50;}
-  .co2dot{display:inline-block;width:7px;height:7px;border-radius:50%;vertical-align:middle;margin-left:2px;flex-shrink:0;}
-  .dot-g{background:#4caf50;}.dot-y{background:#e65c00;}.dot-r{background:#e53935;}
-  .soc-track{background:rgba(0,0,0,0.10);border-radius:3px;height:4px;margin-top:4px;overflow:hidden;}
-  .soc-fill{height:4px;border-radius:3px;transition:width 0.3s;}
-  .soc-ok{background:#4caf50;}.soc-low{background:#ff9800;}.soc-crit{background:#f44336;}
-  .trend-up{color:#e65c00;font-size:0.72em;vertical-align:middle;}
-  .trend-dn{color:#5b9bd5;font-size:0.72em;vertical-align:middle;}
-  .trend-st{color:var(--text-muted);font-size:0.72em;vertical-align:middle;}
-  /* ── Wetter-Bar ──────────────────────────────────────────── */
-  .out-bar{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:6px 12px;border-radius:6px;margin-bottom:10px;border:1px solid transparent;}
-  .out-theme-freeze{background:linear-gradient(135deg,rgba(91,155,213,0.18),rgba(91,155,213,0.06));border-color:rgba(91,155,213,0.3);border-left:3px solid #5b9bd5;}
-  .out-theme-cold{background:linear-gradient(135deg,rgba(130,190,220,0.15),rgba(130,190,220,0.05));border-color:rgba(130,190,220,0.25);border-left:3px solid #82bed4;}
-  .out-theme-cool{background:linear-gradient(135deg,rgba(100,180,100,0.12),rgba(100,180,100,0.04));border-color:rgba(100,180,100,0.22);border-left:3px solid #64b464;}
-  .out-theme-mild{background:linear-gradient(135deg,rgba(76,175,80,0.11),rgba(76,175,80,0.03));border-color:rgba(76,175,80,0.20);border-left:3px solid #4caf50;}
-  .out-theme-warm{background:linear-gradient(135deg,rgba(255,167,38,0.14),rgba(255,167,38,0.04));border-color:rgba(255,167,38,0.25);border-left:3px solid #ffa726;}
-  .out-theme-hot{background:linear-gradient(135deg,rgba(229,57,53,0.14),rgba(229,57,53,0.04));border-color:rgba(229,57,53,0.25);border-left:3px solid #e53935;}
-  .out-icon{font-size:1.5em;flex-shrink:0;line-height:1;margin-right:10px;}
-  .out-main{display:flex;align-items:baseline;gap:5px;flex-shrink:0;padding-right:14px;margin-right:14px;border-right:1px solid var(--div-clr);}
-  .out-label{font-size:0.70em;font-weight:700;color:var(--content-color);text-transform:uppercase;letter-spacing:0.07em;}
-  .out-temp{font-size:1.25em;font-weight:700;color:var(--content-color);line-height:1;}
-  .out-cold{color:#5b9bd5;}.out-cool{color:#4a90b8;}.out-warm{color:#e65c00;}.out-hot{color:#e53935;}
-  .out-seg{flex:1;display:flex;align-items:center;justify-content:center;padding:0 6px;font-size:0.82em;color:var(--text-muted);border-right:1px solid var(--div-clr);white-space:nowrap;}
-  .out-seg:last-child{border-right:none;}
-  .out-comfort{font-size:1em;}
-  .out-range{display:flex;gap:6px;}
-  .out-lo{color:#5b9bd5;font-weight:600;}.out-hi{color:#e53935;font-weight:600;}
-  /* ── Mobile: Wetter-Bar 2-zeilig ────────────────────────── */
-  @media(max-width:520px){
-    .out-bar{padding:6px 10px;}
-    .out-icon{font-size:1.25em;margin-right:7px;}
-    .out-main{flex-basis:100%;border-right:none;padding-right:0;margin-right:0;padding-bottom:5px;margin-bottom:4px;border-bottom:1px solid var(--div-clr);}
-    .out-temp{font-size:1.15em;}
-    .out-seg{flex:0 0 auto;border-right:none;padding:2px 8px 0;}
-    .out-seg:not(:last-child){border-right:1px solid var(--div-clr);}
-  }
-  /* ── Status & Footer ─────────────────────────────────────────────── */
-  .stat-bar{display:flex;gap:10px;align-items:center;padding:4px 2px;margin-bottom:6px;font-size:0.83em;flex-wrap:wrap;}
-  .stat-ok{color:#4caf50;font-weight:600;}
-  .stat-al{display:flex;align-items:center;gap:3px;}
-  .grp-ok{color:#4caf50;font-size:0.80em;font-weight:600;}
-  .empty{color:var(--text-muted);padding:10px;font-size:0.9em;}
-  .config-error{color:#c62828;background:rgba(244,67,54,0.10);border:1px solid rgba(244,67,54,0.30);border-left:3px solid #e53935;border-radius:5px;padding:6px 9px;margin-bottom:7px;font-size:0.82em;}
-  .config-error ul{margin-left:18px;}
-  .grp-alarm{color:#e53935;font-size:0.80em;font-weight:600;}
-  .footer{margin-top:8px;font-size:0.67em;color:var(--footer);text-align:right;}
-  .out-bar.clickable{cursor:pointer;}.out-bar.clickable:hover{filter:brightness(0.96);}
-  .out-warn{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:600;}
-  .out-warn-0{background:#4caf50;color:#fff;}
-  .out-warn-1{background:#f9a825;color:#333;}
-  .out-warn-2{background:#e65c00;color:#fff;}
-  .out-warn-3{background:#c62828;color:#fff;}
-  .out-warn-4{background:#4a0000;color:#fff;}
-  .out-warn-10{background:#e91e63;color:#fff;}
-  .out-warn-11{background:#7b1fa2;color:#fff;}
-  .out-warn-seg{flex-direction:column;align-items:flex-start;gap:3px;}
-  .out-uv{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:3px;font-size:0.75em;font-weight:700;}
-  .uv-low{background:#4caf50;color:#fff;}
-  .uv-mid{background:#f9a825;color:#333;}
-  .uv-high{background:#e65c00;color:#fff;}
-  .uv-veryhigh{background:#e53935;color:#fff;}
-  .uv-extreme{background:#7b1fa2;color:#fff;}
-  .out-row2{display:flex;width:100%;margin-top:5px;padding-top:5px;border-top:1px solid var(--div-clr);}
-  .out-row2 .out-seg{padding:0 4px;font-size:0.80em;}
-  /* Icon-Symbole – kein externer CDN, kein Internet erforderlich */
-  .fa-solid{font-style:normal;display:inline-block;line-height:1;}
-  .fa-solid::before{font-family:system-ui,'Segoe UI Symbol','Apple Symbols','Noto Sans',sans-serif;}
-  .fa-check::before{content:"✓";}
-  .fa-lightbulb::before{content:"◉";}
-  .fa-door-open::before{content:"⊏";}
-  .fa-door-closed::before{content:"⊐";}
-  .fa-temperature-half::before{content:"▾";}
-  .fa-temperature-high::before{content:"▴";}
-  .fa-wind::before{content:"≈";}
-  .fa-bars::before{content:"≡";}
-  .fa-plug::before{content:"⊓";}
-  .fa-car::before{content:"▶";}
-  .fa-bolt::before{content:"↯";}
-  .fa-road::before{content:"↕";}
-  .fa-sun::before{content:"✦";}
-  .fa-house::before{content:"⌂";}
-  .fa-plug-circle-bolt::before{content:"⊛";}
-  .fa-battery-half::before{content:"▬";}
-  .fa-sliders::before{content:"≣";}
-  .fa-circle-half-stroke::before{content:"◑";}
-  .fa-fan::before{content:"✧";}
-  .fa-droplet::before{content:"◉";}
-  .fa-clock::before{content:"◔";}
-  .fa-hourglass-half::before{content:"▽";}
-  .fa-chart-simple::before{content:"▲";}
-  .fa-calendar::before{content:"⊟";}
-  .fa-seedling::before{content:"✿";}
-  .fa-arrow-right-to-bracket::before{content:"→";}
-  .fa-arrow-right-from-bracket::before{content:"←";}
-  .fa-gear::before{content:"⚙";font-variant-emoji:text;}
-  .fa-compass::before{content:"⊕";}
-  .fa-cloud-rain::before{content:"≈";}
-  .fa-cloud-showers-heavy::before{content:"≋";}
-  .fa-shield-halved::before{content:"◈";}
-  .fa-triangle-exclamation::before{content:"△";}
-  .fa-arrow-right::before{content:"→";}
-  .fa-arrow-trend-up::before{content:"↗";}
-  .fa-arrow-trend-down::before{content:"↘";}
+  :root{--cis-muted:rgba(127,127,127,.82);--cis-faint:rgba(127,127,127,.62);--cis-line:rgba(127,127,127,.20);--cis-soft:rgba(127,127,127,.09);--cis-ok:#2f9e58;--cis-info:#3d7fba;--cis-warn:#b97916;--cis-error:#c8453c;--cis-active:#2f9e58;}
+  *{box-sizing:border-box;margin:0;padding:0;} button{font:inherit;}
+  body{background:transparent;color:var(--content-color);font-family:'Poppins',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;margin:0;padding:{$bodyTopPadding} 8px 8px;font-size:13px;line-height:1.35;font-variant-numeric:tabular-nums;}
+  .cis-app{width:100%;}.cis-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:2px 4px 10px;border-bottom:1px solid var(--cis-line);margin-bottom:10px;}.cis-head-main{display:flex;align-items:center;gap:9px;min-width:0;}.cis-head-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--cis-soft);color:var(--accent-color);font-size:19px;line-height:1;}.cis-kicker{font-size:.68em;color:var(--cis-muted);text-transform:uppercase;letter-spacing:.09em;line-height:1.1;}.cis-title{font-size:1.05em;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.cis-head-meta{display:flex;align-items:center;gap:5px;color:var(--cis-muted);font-size:.72em;white-space:nowrap;}.cis-live-dot{width:7px;height:7px;border-radius:50%;background:var(--cis-ok);box-shadow:0 0 0 3px rgba(47,158,88,.14);}
+  .grp{margin-bottom:12px;}.grp+.grp{margin-top:12px;}.grp-hdr{display:flex;align-items:stretch;gap:5px;margin-bottom:7px;border-left:3px solid var(--accent-color);border-radius:8px;background:var(--cis-soft);overflow:hidden;}.grp-toggle{display:flex;align-items:center;gap:7px;flex:1;min-width:0;padding:8px 9px;border:0;background:transparent;color:var(--content-color);text-align:left;cursor:pointer;}.grp-toggle:hover{background:rgba(127,127,127,.08);}.grp-toggle:focus-visible,.grp-nav:focus-visible{outline:2px solid var(--accent-color);outline-offset:-2px;}.grp-chevron{flex:0 0 auto;color:var(--accent-color);font-size:1.05em;transition:transform .16s ease;}.grp.is-collapsed .grp-chevron{transform:rotate(-90deg);}.grp-name{font-size:.88em;font-weight:700;flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.grp-chips{display:flex;gap:5px;align-items:center;flex:1;min-width:0;flex-wrap:wrap;}.grp-stat{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;background:var(--card-color);color:var(--cis-muted);font-size:.76em;white-space:nowrap;}.grp-stat .al-r,.grp-alarm{color:var(--cis-error);}.grp-ok{color:var(--cis-ok);font-size:.76em;font-weight:600;white-space:nowrap;}.grp-nav{display:grid;place-items:center;flex:0 0 32px;border:0;border-left:1px solid var(--cis-line);background:transparent;color:var(--cis-muted);cursor:pointer;font-size:1.1em;}.grp-nav:hover{background:var(--cis-soft);color:var(--accent-color);}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,185px),1fr));gap:8px;}.grp.is-collapsed .grid{display:none;}
+  .card{background:var(--card-color);border:1px solid var(--cis-line);border-left:3px solid var(--cis-line);border-radius:10px;padding:10px 11px;min-width:0;max-width:none;box-shadow:0 1px 2px rgba(0,0,0,.04);transition:border-color .15s ease,transform .15s ease,box-shadow .15s ease;}.card.clickable{cursor:pointer;}.card.clickable:hover{border-color:var(--accent-color);box-shadow:0 2px 7px rgba(0,0,0,.10);transform:translateY(-1px);}.card.clickable:focus-visible{outline:2px solid var(--accent-color);outline-offset:2px;}.s-alert{border-left-color:var(--cis-error);}.s-warn{border-left-color:var(--cis-warn);}.s-charging{border-left-color:var(--cis-info);}.s-active{border-left-color:var(--cis-active);}.s-dehumid{border-left-color:#2b9eaa;}.s-inactive{border-left-color:var(--cis-line);opacity:.82;}.c-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:7px;}.c-name{font-weight:700;color:var(--content-color);font-size:.94em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.c-temp{font-weight:700;font-size:.94em;white-space:nowrap;flex-shrink:0;}.p-row{display:flex;gap:8px;margin-top:4px;min-height:1.45em;}.p-cell{display:flex;align-items:center;gap:4px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;color:var(--cis-muted);font-size:.82em;}.p-ico{font-size:.92em;flex-shrink:0;width:1.2em;text-align:center;}.p-none{color:var(--cis-faint);font-size:.82em;}.ico-muted{color:var(--cis-muted);}.ico-on{color:#cf8a1f;}.ico-warn{color:var(--cis-warn);}.ico-alert{color:var(--cis-error);}.ico-charging{color:var(--cis-info);}.ico-solar{color:#cf8a1f;}.ico-grid-in{color:var(--cis-ok);}.ico-grid-out{color:var(--cis-error);}.ico-active{color:var(--cis-active);}.al-r{color:var(--cis-error);}.al-y{color:var(--cis-warn);}.al-g{color:var(--cis-ok);}.co2dot{display:inline-block;width:7px;height:7px;border-radius:50%;vertical-align:middle;margin-left:2px;flex-shrink:0;}.dot-g{background:var(--cis-ok);}.dot-y{background:var(--cis-warn);}.dot-r{background:var(--cis-error);}.soc-track{background:var(--cis-soft);border-radius:999px;height:5px;margin-top:6px;overflow:hidden;}.soc-fill{height:5px;border-radius:999px;transition:width .3s;}.soc-ok{background:var(--cis-ok);}.soc-low{background:var(--cis-warn);}.soc-crit{background:var(--cis-error);}.trend-up{color:var(--cis-warn);font-size:.72em;vertical-align:middle;}.trend-dn{color:var(--cis-info);font-size:.72em;vertical-align:middle;}.trend-st{color:var(--cis-muted);font-size:.72em;vertical-align:middle;}
+  .out-bar{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:9px 11px;border-radius:10px;margin-bottom:10px;background:var(--card-color);border:1px solid var(--cis-line);border-left:3px solid var(--accent-color);box-shadow:0 1px 2px rgba(0,0,0,.04);}.out-theme-freeze{border-left-color:#5b9bd5;}.out-theme-cold{border-left-color:#82bed4;}.out-theme-cool{border-left-color:#64a978;}.out-theme-mild{border-left-color:var(--cis-ok);}.out-theme-warm{border-left-color:#d58b20;}.out-theme-hot{border-left-color:var(--cis-error);}.out-icon{font-size:1.35em;flex-shrink:0;line-height:1;margin-right:9px;}.out-main{display:flex;align-items:baseline;gap:6px;flex-shrink:0;padding-right:12px;margin-right:4px;border-right:1px solid var(--cis-line);}.out-label{font-size:.68em;font-weight:700;color:var(--cis-muted);text-transform:uppercase;letter-spacing:.07em;}.out-temp{font-size:1.18em;font-weight:700;color:var(--content-color);line-height:1;}.out-cold{color:#5b9bd5;}.out-cool{color:#4a90b8;}.out-warm{color:#c97000;}.out-hot{color:var(--cis-error);}.out-seg{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;padding:0 7px;font-size:.80em;color:var(--cis-muted);border-right:1px solid var(--cis-line);white-space:nowrap;}.out-seg:last-child{border-right:none;}.out-comfort{font-size:.96em;}.out-range{display:flex;gap:6px;}.out-lo{color:#4a90b8;font-weight:700;}.out-hi{color:var(--cis-error);font-weight:700;}.out-bar.clickable{cursor:pointer;}.out-bar.clickable:hover{border-color:var(--accent-color);}.out-warn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:.74em;font-weight:700;}.out-warn-0{background:rgba(47,158,88,.14);color:var(--cis-ok);}.out-warn-1{background:rgba(185,121,22,.16);color:var(--cis-warn);}.out-warn-2,.out-warn-3,.out-warn-4{background:rgba(200,69,60,.14);color:var(--cis-error);}.out-warn-10,.out-warn-11{background:rgba(123,31,162,.14);color:#7b1fa2;}.out-warn-seg{flex-direction:column;align-items:flex-start;gap:3px;}.out-uv{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:.74em;font-weight:700;background:var(--cis-soft);color:var(--cis-muted);}.uv-low{color:var(--cis-ok);}.uv-mid,.uv-high{color:var(--cis-warn);}.uv-veryhigh{color:var(--cis-error);}.uv-extreme{color:#7b1fa2;}.out-row2{display:flex;flex-wrap:wrap;width:100%;gap:4px;margin-top:7px;padding-top:7px;border-top:1px solid var(--cis-line);}.out-row2 .out-seg{flex:0 1 auto;padding:0 5px;font-size:.78em;border-right:0;}
+  .stat-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;margin-bottom:10px;border:1px solid var(--cis-line);border-radius:10px;background:var(--cis-soft);font-size:.82em;}.stat-label{display:flex;align-items:baseline;gap:7px;min-width:0;}.stat-title{font-weight:700;color:var(--content-color);}.stat-subtitle{color:var(--cis-muted);font-size:.9em;}.stat-ok{color:var(--cis-ok);font-weight:700;white-space:nowrap;}.stat-items{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap;}.stat-item{display:inline-flex;align-items:center;gap:3px;white-space:nowrap;}.stat-al{display:flex;align-items:center;gap:3px;}.empty{color:var(--cis-muted);padding:12px;font-size:.9em;}.config-error{color:var(--cis-error);background:rgba(200,69,60,.10);border:1px solid rgba(200,69,60,.30);border-left:3px solid var(--cis-error);border-radius:8px;padding:8px 10px;margin-bottom:9px;font-size:.82em;}.config-error ul{margin-left:18px;}.footer{margin-top:9px;font-size:.68em;color:var(--cis-faint);text-align:right;}
+  .fa-solid{font-style:normal;display:inline-block;line-height:1;}.fa-solid::before{font-family:system-ui,'Segoe UI Symbol','Apple Symbols','Noto Sans',sans-serif;}.fa-check::before{content:"✓";}.fa-lightbulb::before{content:"◉";}.fa-door-open::before{content:"⊏";}.fa-door-closed::before{content:"⊐";}.fa-temperature-half::before{content:"▾";}.fa-temperature-high::before{content:"▴";}.fa-wind::before{content:"≈";}.fa-bars::before{content:"≡";}.fa-plug::before{content:"⊓";}.fa-car::before{content:"▶";}.fa-bolt::before{content:"↯";}.fa-road::before{content:"↕";}.fa-sun::before{content:"✦";}.fa-house::before{content:"⌂";}.fa-plug-circle-bolt::before{content:"⊛";}.fa-battery-half::before{content:"▬";}.fa-sliders::before{content:"≣";}.fa-circle-half-stroke::before{content:"◑";}.fa-fan::before{content:"✧";}.fa-droplet::before{content:"◉";}.fa-clock::before{content:"◔";}.fa-hourglass-half::before{content:"▽";}.fa-chart-simple::before{content:"▲";}.fa-calendar::before{content:"⊟";}.fa-seedling::before{content:"✿";}.fa-arrow-right-to-bracket::before{content:"→";}.fa-arrow-right-from-bracket::before{content:"←";}.fa-gear::before{content:"⚙";font-variant-emoji:text;}.fa-compass::before{content:"⊕";}.fa-cloud-rain::before{content:"≈";}.fa-cloud-showers-heavy::before{content:"≋";}.fa-shield-halved::before{content:"◈";}.fa-triangle-exclamation::before{content:"△";}.fa-arrow-right::before{content:"→";}.fa-arrow-trend-up::before{content:"↗";}.fa-arrow-trend-down::before{content:"↘";}
+  @media(max-width:520px){body{font-size:13px;padding-left:4px;padding-right:4px;}.cis-head{padding-left:3px;padding-right:3px;}.cis-head-meta{font-size:.66em;}.cis-kicker{font-size:.62em;}.cis-title{font-size:1em;}.grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr));gap:7px;}.card{padding:9px 10px;}.out-bar{padding:8px 9px;}.out-main{flex-basis:100%;border-right:0;padding-right:0;margin-right:0;padding-bottom:7px;margin-bottom:5px;border-bottom:1px solid var(--cis-line);}.out-seg{flex:0 1 auto;border-right:0;padding:2px 6px 0;}.out-seg:not(:last-child){border-right:1px solid var(--cis-line);}.stat-bar{align-items:flex-start;flex-direction:column;gap:5px;}.stat-items{justify-content:flex-start;}.grp-chips{display:none;}.grp-name{font-size:.9em;}}
 </style>
-<div id="cis-content">{$content}</div>
-<div id="cis-footer" class="footer">{$safeFooter}</div>
+<div id="cis-app" class="cis-app">
+  <div class="cis-head"><div class="cis-head-main"><span class="cis-head-icon" aria-hidden="true">⌂</span><div><div class="cis-kicker">Central Info Screen</div><div class="cis-title">Hausübersicht</div></div></div><div class="cis-head-meta"><span class="cis-live-dot" aria-hidden="true"></span><span>Live-Übersicht</span></div></div>
+  <div id="cis-content">{$content}</div>
+  <div id="cis-footer" class="footer">{$safeFooter}</div>
+</div>
 <script>
-function handleMessage(data){
-  try {
-    var d=typeof data==='string' ? JSON.parse(data) : data;
-    var content=document.getElementById('cis-content');
-    var footer=document.getElementById('cis-footer');
-    if(d && d.type==='full' && d.content!==undefined && content)content.innerHTML=d.content;
-    if(d && d.type==='delta' && d.parts){
-      if(d.parts.outdoor!==undefined)replacePart('cis-outdoor',d.parts.outdoor);
-      if(d.parts.globalStatus!==undefined)replacePart('cis-global-status',d.parts.globalStatus);
-      if(d.parts.groups){
-        Object.keys(d.parts.groups).forEach(function(key){replacePart('cis-group-'+key,d.parts.groups[key]);});
-      }
-    }
-    // Kompatibilität mit älteren Update-Payloads.
-    if(d && !d.type && d.content!==undefined && content)content.innerHTML=d.content;
-    if(d && d.footer!==undefined && footer)footer.textContent=d.footer;
-  } catch(e) {
-    console.warn('Central Info Screen: ungültige Aktualisierungsdaten', e);
-  }
-}
-function replacePart(id,html){
-  var current=document.getElementById(id);
-  if(!current || typeof html!=='string')return;
-  var template=document.createElement('template');
-  template.innerHTML=html.trim();
-  var replacement=template.content.firstElementChild;
-  if(replacement)current.replaceWith(replacement);
-}
+(function(){
+  var collapsedGroups=Object.create(null);
+  function rememberCollapsed(){document.querySelectorAll('[data-cis-group]').forEach(function(group){collapsedGroups[group.getAttribute('data-cis-group')]=group.classList.contains('is-collapsed');});}
+  function setGroupCollapsed(group,collapsed){group.classList.toggle('is-collapsed',collapsed);var toggle=group.querySelector('[data-cis-toggle]');if(toggle)toggle.setAttribute('aria-expanded',collapsed?'false':'true');}
+  function restoreCollapsed(){document.querySelectorAll('[data-cis-group]').forEach(function(group){var key=group.getAttribute('data-cis-group');if(collapsedGroups[key])setGroupCollapsed(group,true);});}
+  function replacePart(id,html){var current=document.getElementById(id);if(!current||typeof html!=='string')return;var wasCollapsed=current.classList.contains('is-collapsed');var template=document.createElement('template');template.innerHTML=html.trim();var replacement=template.content.firstElementChild;if(!replacement)return;current.replaceWith(replacement);if(wasCollapsed)setGroupCollapsed(replacement,true);}
+  document.addEventListener('click',function(event){var toggle=event.target.closest?event.target.closest('[data-cis-toggle]'):null;if(!toggle)return;var group=document.getElementById('cis-group-'+toggle.getAttribute('data-cis-toggle'));if(!group)return;var collapsed=!group.classList.contains('is-collapsed');collapsedGroups[toggle.getAttribute('data-cis-toggle')]=collapsed;setGroupCollapsed(group,collapsed);});
+  window.handleMessage=function(data){try{var d=typeof data==='string'?JSON.parse(data):data;var content=document.getElementById('cis-content');var footer=document.getElementById('cis-footer');if(d&&d.type==='full'&&d.content!==undefined&&content){rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.type==='delta'&&d.parts){if(d.parts.outdoor!==undefined)replacePart('cis-outdoor',d.parts.outdoor);if(d.parts.globalStatus!==undefined)replacePart('cis-global-status',d.parts.globalStatus);if(d.parts.groups)Object.keys(d.parts.groups).forEach(function(key){replacePart('cis-group-'+key,d.parts.groups[key]);});}if(d&&!d.type&&d.content!==undefined&&content){rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.footer!==undefined&&footer)footer.textContent=d.footer;}catch(e){console.warn('Central Info Screen: ungültige Aktualisierungsdaten',e);}};
+})();
 </script>
 HTML;
     }
-
     // -------------------------------------------------------------------------
     // Konfigurationsformular
     // -------------------------------------------------------------------------
@@ -1165,7 +1008,7 @@ HTML;
             return $html;
         }
         $needle = "<div class='card{$stateClass}'>";
-        $replacement = "<div class='card{$stateClass} clickable' onclick='openObject({$linkID})'>";
+        $replacement = "<div class='card{$stateClass} clickable' role='button' tabindex='0' onclick='openObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'>";
         $count = 0;
         $result = str_replace($needle, $replacement, $html, $count);
         return $count > 0 ? $result : $html;
@@ -1288,10 +1131,10 @@ HTML;
         $raeumeFuerHeader = array_values(array_filter($gruppeItems, fn($x) => ($x['__typ'] ?? '') === 'raum'));
 
         $html  = "<div class='grp' id='cis-group-{$groupKey}' data-cis-group='{$groupKey}'>";
-        $html .= $this->BuildBereichHeader($bereichName, $bereichDef, $raeumeFuerHeader);
+        $html .= $this->BuildBereichHeader($bereichName, $bereichDef, $raeumeFuerHeader, $groupKey);
 
         if (!empty($gruppeItems)) {
-            $html .= "<div class='grid'>";
+            $html .= "<div id='cis-grid-{$groupKey}' class='grid' data-cis-grid='{$groupKey}'>";
             foreach ($gruppeItems as $item) {
                 $html .= $this->BuildRoomCard($item);
             }
@@ -1615,7 +1458,7 @@ HTML;
         }
 
         if ($lichterAn === 0 && $fensterOffen === 0 && $tempWarn === 0 && $luftWarn === 0) {
-            return "<div class='stat-bar'><span class='stat-ok'><i class='fa-solid fa-check'></i> Alles in Ordnung</span></div>";
+            return "<div class='stat-bar stat-normal'><div class='stat-label'><span class='stat-title'>Hausstatus</span><span class='stat-ok'><i class='fa-solid fa-check'></i> Alles in Ordnung</span></div></div>";
         }
 
         $items = [];
@@ -1624,7 +1467,7 @@ HTML;
         if ($tempWarn > 0)     { $items[] = "<span class='stat-al al-r'><i class='fa-solid fa-temperature-half'></i> {$tempWarn} Temp.</span>"; }
         if ($luftWarn > 0)     { $items[] = "<span class='stat-al al-y'><i class='fa-solid fa-wind'></i> {$luftWarn} Luft</span>"; }
 
-        return "<div class='stat-bar'>" . implode('', $items) . "</div>";
+        return "<div class='stat-bar stat-attention'><div class='stat-label'><span class='stat-title'>Hausstatus</span><span class='stat-subtitle'>Aktuelle Hinweise</span></div><div class='stat-items'>" . implode('', $items) . "</div></div>";
     }
 
     private function HasBereichAlarm(array $raeume): bool
@@ -1655,7 +1498,7 @@ HTML;
         return false;
     }
 
-    private function BuildBereichHeader(string $name, ?array $def, array $raeume = []): string
+    private function BuildBereichHeader(string $name, ?array $def, array $raeume = [], string $groupKey = ''): string
     {
         if ($name === '' && $def === null) {
             return '';
@@ -1726,14 +1569,18 @@ HTML;
 
         $linkID      = (int)(($def ?? [])['LinkID'] ?? 0);
         $hasLink     = $linkID > 0 && IPS_ObjectExists($linkID);
-        $clickCls    = $hasLink ? ' clickable' : '';
-        $clickAttr   = $hasLink ? " onclick='openObject({$linkID})'" : '';
         $displayName = $name !== '' ? $this->EscapeHtml($name) : 'Ohne Bereich';
+        $safeGroupKey = $this->EscapeHtml($groupKey);
+        $navButton = $hasLink
+            ? "<button type='button' class='grp-nav' title='Bereich öffnen' aria-label='Bereich öffnen' onclick='event.stopPropagation();openObject({$linkID})'>↗</button>"
+            : '';
 
-        return "<div class='grp-hdr{$clickCls}'{$clickAttr}>"
+        return "<div class='grp-hdr'>"
+            . "<button type='button' class='grp-toggle' data-cis-toggle='{$safeGroupKey}' aria-controls='cis-grid-{$safeGroupKey}' aria-expanded='true'>"
+            . "<span class='grp-chevron' aria-hidden='true'>⌄</span>"
             . "<span class='grp-name'>{$displayName}</span>"
             . ($stats !== '' ? "<span class='grp-chips'>{$stats}</span>" : '')
-            . "</div>";
+            . "</button>{$navButton}</div>";
     }
 
     // Dispatch-Funktion – leitet nach Typ weiter
@@ -1870,7 +1717,7 @@ HTML;
         $linkID   = (int)($raum['LinkID'] ?? 0);
         $hasLink  = $linkID > 0 && IPS_ObjectExists($linkID);
         $cardAttr = $hasLink
-            ? "class='card{$stateClass} clickable' onclick='openObject({$linkID})'"
+            ? "class='card{$stateClass} clickable' role='button' tabindex='0' onclick='openObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'"
             : "class='card{$stateClass}'";
 
         return "<div {$cardAttr}>{$head}{$row1}{$row2}</div>";
