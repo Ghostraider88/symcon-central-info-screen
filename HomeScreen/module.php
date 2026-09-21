@@ -1301,8 +1301,8 @@ HTML;
         $raeumeFuerHeader = array_values(array_filter($gruppeItems, fn($x) => ($x['__typ'] ?? '') === 'raum'));
 
         $startCollapsed = (bool)($bereichDef['StartCollapsed'] ?? false);
-        if ($this->ReadPropertyBoolean('CollapseTechnicalGroups') && $this->IsTechnicalGroup($gruppeItems)) {
-            $startCollapsed = true;
+        if ($this->IsTechnicalGroup($gruppeItems)) {
+            $startCollapsed = $this->ReadPropertyBoolean('CollapseTechnicalGroups');
         }
         $groupClass = $startCollapsed ? ' is-collapsed' : '';
         $html  = "<div class='grp{$groupClass}' id='cis-group-{$groupKey}' data-cis-group='{$groupKey}'>";
