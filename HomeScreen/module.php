@@ -1492,7 +1492,7 @@ HTML;
                 if ($linkID <= 0 || !IPS_ObjectExists($linkID)) {
                     continue;
                 }
-                $html .= "<button type='button' class='quick-action' title='{$label}' aria-label='{$label}' data-cis-open-object='{$linkID}' onclick='event.preventDefault();event.stopPropagation();openObject({$linkID})'><span class='quick-action-icon' aria-hidden='true' onclick='event.preventDefault();event.stopPropagation();openObject({$linkID})'>&#9889;</span><span class='quick-action-label' onclick='event.preventDefault();event.stopPropagation();openObject({$linkID})'>{$label}</span></button>";
+                $html .= "<button type='button' class='quick-action' title='{$label}' aria-label='{$label}' data-cis-open-object='{$linkID}' onclick='event.preventDefault();event.stopPropagation();openObject({$linkID})'>&#9889; {$label}</button>";
                 continue;
             }
             if ($type === 'variable') {
