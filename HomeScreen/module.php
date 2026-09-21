@@ -375,16 +375,6 @@ class HomeScreen extends IPSModuleStrict
 </div>
 <script>
 (function(){
-  window.cisOpenObject=function(objectId,event){
-    if(event){event.preventDefault();event.stopPropagation();}
-    var opener=null;
-    if(typeof window.openObject==='function'){opener=window.openObject;}
-    else if(window.parent&&typeof window.parent.openObject==='function'){opener=window.parent.openObject;}
-    else if(window.top&&typeof window.top.openObject==='function'){opener=window.top.openObject;}
-    if(opener){opener.call(window,Number(objectId));return false;}
-    console.warn('Central Info Screen: openObject is not available');
-    return false;
-  };
   var app=document.getElementById('cis-app');
   var collapsedGroups=Object.create(null);
   var layoutKey=app?app.getAttribute('data-cis-layout-key')||'':'';
@@ -1187,7 +1177,7 @@ HTML;
             return $html;
         }
         $needle = "<div class='card{$stateClass}'>";
-        $replacement = "<div class='card{$stateClass} clickable' role='button' tabindex='0' onclick='cisOpenObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();cisOpenObject({$linkID})}'>";
+        $replacement = "<div class='card{$stateClass} clickable' role='button' tabindex='0' onclick='event.stopPropagation();openObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'>";
         $count = 0;
         $result = str_replace($needle, $replacement, $html, $count);
         return $count > 0 ? $result : $html;
@@ -1485,7 +1475,7 @@ HTML;
                 if ($linkID <= 0 || !IPS_ObjectExists($linkID)) {
                     continue;
                 }
-                $html .= "<button type='button' class='quick-action' title='{$label}' aria-label='{$label}' onclick='cisOpenObject({$linkID})'><span class='quick-action-icon' aria-hidden='true'>&#9889;</span><span>{$label}</span></button>";
+                $html .= "<button type='button' class='quick-action' title='{$label}' aria-label='{$label}' onclick='event.stopPropagation();openObject({$linkID})'><span class='quick-action-icon' aria-hidden='true'>&#9889;</span><span>{$label}</span></button>";
                 continue;
             }
             if ($type === 'variable') {
@@ -1611,7 +1601,7 @@ HTML;
 
         // Klick / Navigation
         $hasLink   = $linkID > 0 && IPS_ObjectExists($linkID);
-        $clickAttr = $hasLink ? " onclick='cisOpenObject({$linkID})'" : '';
+        $clickAttr = $hasLink ? " onclick='event.stopPropagation();openObject({$linkID})'" : '';
         $clickCls  = $hasLink ? ' clickable' : '';
 
         $html  = "<div class='out-bar {$barTheme}{$clickCls}'{$clickAttr}>";
@@ -1824,7 +1814,7 @@ HTML;
         $displayName = $name !== '' ? $this->EscapeHtml($name) : 'Ohne Bereich';
         $safeGroupKey = $this->EscapeHtml($groupKey);
         $navButton = $hasLink
-            ? "<button type='button' class='grp-nav' title='Bereich öffnen' aria-label='Bereich öffnen' onclick='event.stopPropagation();cisOpenObject({$linkID})'>↗</button>"
+            ? "<button type='button' class='grp-nav' title='Bereich öffnen' aria-label='Bereich öffnen' onclick='event.stopPropagation();openObject({$linkID})'>↗</button>"
             : '';
 
         $expanded = $collapsed ? 'false' : 'true';
@@ -1970,7 +1960,7 @@ HTML;
         $linkID   = (int)($raum['LinkID'] ?? 0);
         $hasLink  = $linkID > 0 && IPS_ObjectExists($linkID);
         $cardAttr = $hasLink
-            ? "class='card{$stateClass} clickable' role='button' tabindex='0' onclick='cisOpenObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();cisOpenObject({$linkID})}'"
+            ? "class='card{$stateClass} clickable' role='button' tabindex='0' onclick='event.stopPropagation();openObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'"
             : "class='card{$stateClass}'";
 
         return "<div {$cardAttr}>{$head}{$row1}{$row2}</div>";
