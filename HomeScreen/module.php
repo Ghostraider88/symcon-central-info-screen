@@ -383,7 +383,24 @@ class HomeScreen extends IPSModuleStrict
   function setGroupCollapsed(group,collapsed){group.classList.toggle('is-collapsed',collapsed);var toggle=group.querySelector('[data-cis-toggle]');if(toggle)toggle.setAttribute('aria-expanded',collapsed?'false':'true');}
   function restoreCollapsed(){document.querySelectorAll('[data-cis-group]').forEach(function(group){var key=group.getAttribute('data-cis-group');if(collapsedGroups[key])setGroupCollapsed(group,true);});}
   function replacePart(id,html){var current=document.getElementById(id);if(!current||typeof html!=='string')return;var wasCollapsed=current.classList.contains('is-collapsed');var template=document.createElement('template');template.innerHTML=html.trim();var replacement=template.content.firstElementChild;if(!replacement)return;current.replaceWith(replacement);if(wasCollapsed)setGroupCollapsed(replacement,true);}
-  document.addEventListener('click',function(event){var action=event.target.closest?event.target.closest('[data-cis-action]'):null;if(action){if(action.getAttribute('data-cis-confirm')==='1'&&!window.confirm(action.getAttribute('data-cis-confirm-text')||'Aktion ausfuehren?'))return;var ident=action.getAttribute('data-cis-action');var value=action.getAttribute('data-cis-value')||'';if(typeof requestAction==='function')requestAction(ident,value);return;}var toggle=event.target.closest?event.target.closest('[data-cis-toggle]'):null;if(!toggle)return;var group=document.getElementById('cis-group-'+toggle.getAttribute('data-cis-toggle'));if(!group)return;var collapsed=!group.classList.contains('is-collapsed');collapsedGroups[toggle.getAttribute('data-cis-toggle')]=collapsed;setGroupCollapsed(group,collapsed);});
+  function findOpenObjectTarget(node){
+    while(node&&node!==document){
+      if(node.getAttribute&&node.getAttribute('data-cis-open-object'))return node;
+      node=node.parentElement;
+    }
+    return null;
+  }
+  document.addEventListener('click',function(event){
+    var navigation=findOpenObjectTarget(event.target);
+    if(navigation){
+      var objectID=parseInt(navigation.getAttribute('data-cis-open-object')||'0',10);
+      if(objectID>0&&typeof window.openObject==='function'){
+        event.preventDefault();
+        event.stopPropagation();
+        window.openObject(objectID);
+      }
+      return;
+    }var action=event.target.closest?event.target.closest('[data-cis-action]'):null;if(action){if(action.getAttribute('data-cis-confirm')==='1'&&!window.confirm(action.getAttribute('data-cis-confirm-text')||'Aktion ausfuehren?'))return;var ident=action.getAttribute('data-cis-action');var value=action.getAttribute('data-cis-value')||'';if(typeof requestAction==='function')requestAction(ident,value);return;}var toggle=event.target.closest?event.target.closest('[data-cis-toggle]'):null;if(!toggle)return;var group=document.getElementById('cis-group-'+toggle.getAttribute('data-cis-toggle'));if(!group)return;var collapsed=!group.classList.contains('is-collapsed');collapsedGroups[toggle.getAttribute('data-cis-toggle')]=collapsed;setGroupCollapsed(group,collapsed);},true);
   window.handleMessage=function(data){try{var d=typeof data==='string'?JSON.parse(data):data;var content=document.getElementById('cis-content');var footer=document.getElementById('cis-footer');if(d&&d.type==='full'&&d.content!==undefined&&content){var layoutChanged=prepareLayout(d.layoutKey);if(!layoutChanged)rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.type==='delta'&&d.parts){if(d.parts.outdoor!==undefined)replacePart('cis-outdoor',d.parts.outdoor);if(d.parts.globalStatus!==undefined)replacePart('cis-global-status',d.parts.globalStatus);if(d.parts.groups)Object.keys(d.parts.groups).forEach(function(key){replacePart('cis-group-'+key,d.parts.groups[key]);});}if(d&&!d.type&&d.content!==undefined&&content){var layoutChanged=prepareLayout(d.layoutKey);if(!layoutChanged)rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.footer!==undefined&&footer)footer.textContent=d.footer;}catch(e){console.warn('Central Info Screen: ungueltige Aktualisierungsdaten',e);}};
 })();</script>
 HTML;
@@ -1177,7 +1194,7 @@ HTML;
             return $html;
         }
         $needle = "<div class='card{$stateClass}'>";
-        $replacement = "<div class='card{$stateClass} clickable' role='button' tabindex='0' onclick='event.stopPropagation();openObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'>";
+        $replacement = "<div class='card{$stateClass} clickable' role='button' tabindex='0' data-cis-open-object='{$linkID}' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'>";
         $count = 0;
         $result = str_replace($needle, $replacement, $html, $count);
         return $count > 0 ? $result : $html;
@@ -1475,7 +1492,7 @@ HTML;
                 if ($linkID <= 0 || !IPS_ObjectExists($linkID)) {
                     continue;
                 }
-                $html .= "<button type='button' class='quick-action' title='{$label}' aria-label='{$label}' onclick='event.stopPropagation();openObject({$linkID})'><span class='quick-action-icon' aria-hidden='true'>&#9889;</span><span>{$label}</span></button>";
+                $html .= "<button type='button' class='quick-action' title='{$label}' aria-label='{$label}' data-cis-open-object='{$linkID}'><span class='quick-action-icon' aria-hidden='true'>&#9889;</span><span>{$label}</span></button>";
                 continue;
             }
             if ($type === 'variable') {
@@ -1601,7 +1618,7 @@ HTML;
 
         // Klick / Navigation
         $hasLink   = $linkID > 0 && IPS_ObjectExists($linkID);
-        $clickAttr = $hasLink ? " onclick='event.stopPropagation();openObject({$linkID})'" : '';
+        $clickAttr = $hasLink ? " data-cis-open-object='{$linkID}'" : '';
         $clickCls  = $hasLink ? ' clickable' : '';
 
         $html  = "<div class='out-bar {$barTheme}{$clickCls}'{$clickAttr}>";
@@ -1814,7 +1831,7 @@ HTML;
         $displayName = $name !== '' ? $this->EscapeHtml($name) : 'Ohne Bereich';
         $safeGroupKey = $this->EscapeHtml($groupKey);
         $navButton = $hasLink
-            ? "<button type='button' class='grp-nav' title='Bereich öffnen' aria-label='Bereich öffnen' onclick='event.stopPropagation();openObject({$linkID})'>↗</button>"
+            ? "<button type='button' class='grp-nav' title='Bereich öffnen' aria-label='Bereich öffnen' data-cis-open-object='{$linkID}'>↗</button>"
             : '';
 
         $expanded = $collapsed ? 'false' : 'true';
@@ -1960,7 +1977,7 @@ HTML;
         $linkID   = (int)($raum['LinkID'] ?? 0);
         $hasLink  = $linkID > 0 && IPS_ObjectExists($linkID);
         $cardAttr = $hasLink
-            ? "class='card{$stateClass} clickable' role='button' tabindex='0' onclick='event.stopPropagation();openObject({$linkID})' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'"
+            ? "class='card{$stateClass} clickable' role='button' tabindex='0' data-cis-open-object='{$linkID}' onkeydown='if(event.key===&quot;Enter&quot;||event.key===&quot; &quot;){event.preventDefault();openObject({$linkID})}'"
             : "class='card{$stateClass}'";
 
         return "<div {$cardAttr}>{$head}{$row1}{$row2}</div>";
