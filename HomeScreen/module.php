@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 class HomeScreen extends IPSModuleStrict
 {
-    private const MODULE_VERSION = '2.0.0-beta.2';
+    private const MODULE_VERSION = '2.0.0-beta.3';
     private const UPDATE_DEBOUNCE_MS = 250;
     private const TREND_PRIMARY_SECONDS = 2 * 3600;
     private const TREND_FALLBACK_SECONDS = 6 * 3600;
@@ -309,12 +309,30 @@ class HomeScreen extends IPSModuleStrict
                 'parts' => [],
             ];
         }
-
         $payload['footer'] = 'v' . self::MODULE_VERSION . ' · Aktualisiert: ' . date('d.m.Y H:i:s');
+        $payload['layoutKey'] = $this->GetLayoutKey();
 
         return json_encode($payload, JSON_THROW_ON_ERROR);
     }
 
+    private function GetLayoutKey(): string
+    {
+        $bereiche = $this->ReadJsonList('Bereiche');
+        $startStates = [];
+        foreach ($bereiche as $bereich) {
+            $startStates[] = [
+                (string)($bereich['Name'] ?? ''),
+                (bool)($bereich['StartCollapsed'] ?? false),
+            ];
+        }
+
+        return hash('sha256', json_encode([
+            $this->ReadPropertyString('LayoutMode'),
+            $this->ReadPropertyBoolean('ShowWeatherDetails'),
+            $this->ReadPropertyBoolean('CollapseTechnicalGroups'),
+            $startStates,
+        ], JSON_THROW_ON_ERROR));
+    }
     private function SendVisualizationUpdate(string $payload): void
     {
         if (!$this->UpdateVisualizationValue($payload)) {
@@ -331,6 +349,7 @@ class HomeScreen extends IPSModuleStrict
         if (!in_array($layoutMode, ['compact', 'standard'], true)) {
             $layoutMode = 'compact';
         }
+        $layoutKey = $this->EscapeHtml($this->GetLayoutKey());
         $weatherDetailsClass = $this->ReadPropertyBoolean('ShowWeatherDetails') ? ' show-weather-details' : '';
         $appClass = 'cis-app mode-' . $layoutMode . $weatherDetailsClass;
         return <<<HTML
@@ -349,22 +368,24 @@ class HomeScreen extends IPSModuleStrict
   .fa-solid{font-style:normal;display:inline-block;line-height:1;}.fa-solid::before{font-family:system-ui,'Segoe UI Symbol','Apple Symbols','Noto Sans',sans-serif;}.fa-check::before{content:"✓";}.fa-lightbulb::before{content:"◉";}.fa-door-open::before{content:"⊏";}.fa-door-closed::before{content:"⊐";}.fa-temperature-half::before{content:"▾";}.fa-temperature-high::before{content:"▴";}.fa-wind::before{content:"≈";}.fa-bars::before{content:"≡";}.fa-plug::before{content:"⊓";}.fa-car::before{content:"▶";}.fa-bolt::before{content:"↯";}.fa-road::before{content:"↕";}.fa-sun::before{content:"✦";}.fa-house::before{content:"⌂";}.fa-plug-circle-bolt::before{content:"⊛";}.fa-battery-half::before{content:"▬";}.fa-sliders::before{content:"≣";}.fa-circle-half-stroke::before{content:"◑";}.fa-fan::before{content:"✧";}.fa-droplet::before{content:"◉";}.fa-clock::before{content:"◔";}.fa-hourglass-half::before{content:"▽";}.fa-chart-simple::before{content:"▲";}.fa-calendar::before{content:"⊟";}.fa-seedling::before{content:"✿";}.fa-arrow-right-to-bracket::before{content:"→";}.fa-arrow-right-from-bracket::before{content:"←";}.fa-gear::before{content:"⚙";font-variant-emoji:text;}.fa-compass::before{content:"⊕";}.fa-cloud-rain::before{content:"≈";}.fa-cloud-showers-heavy::before{content:"≋";}.fa-shield-halved::before{content:"◈";}.fa-triangle-exclamation::before{content:"△";}.fa-arrow-right::before{content:"→";}.fa-arrow-trend-up::before{content:"↗";}.fa-arrow-trend-down::before{content:"↘";}
   .quick-actions{display:flex;align-items:center;gap:6px;overflow-x:auto;margin:0 0 8px;padding:1px 0 2px;scrollbar-width:thin;}.quick-action{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;min-height:31px;padding:5px 10px;border:1px solid var(--cis-line);border-radius:999px;background:var(--card-color);color:var(--content-color);font-size:.79em;cursor:pointer;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.04);}.quick-action:hover,.quick-action:focus-visible{border-color:var(--accent-color);color:var(--accent-color);outline:2px solid transparent;}.quick-action.is-action{border-color:rgba(0,190,165,.40);}.quick-action.is-danger{border-color:rgba(200,69,60,.42);}.quick-action-icon{font-size:1.1em;line-height:1;color:var(--accent-color);}.mode-compact .cis-head{display:none;}.mode-compact .footer{display:none;}.mode-compact .stat-normal{display:none;}.mode-compact .quick-actions{margin-bottom:7px;}.mode-compact .out-bar{padding:7px 9px;margin-bottom:7px;}.mode-compact .grp{margin-bottom:8px;}.mode-compact .grp+.grp{margin-top:8px;}.mode-compact .grp-hdr{margin-bottom:5px;}.mode-compact .grp-toggle{padding:7px 8px;}.mode-compact .card{padding:8px 9px;border-radius:8px;}.mode-compact .grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:6px;}.mode-compact:not(.show-weather-details) .out-detail{display:none;}.mode-compact:not(.show-weather-details) .out-row2{display:none;}  @media(max-width:520px){body{font-size:13px;padding-left:4px;padding-right:4px;}.cis-head{padding-left:3px;padding-right:3px;}.cis-head-meta{font-size:.66em;}.cis-kicker{font-size:.62em;}.cis-title{font-size:1em;}.grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,155px),1fr));gap:7px;}.card{padding:9px 10px;}.out-bar{padding:8px 9px;}.out-main{flex-basis:100%;border-right:0;padding-right:0;margin-right:0;padding-bottom:7px;margin-bottom:5px;border-bottom:1px solid var(--cis-line);}.out-seg{flex:0 1 auto;border-right:0;padding:2px 6px 0;}.out-seg:not(:last-child){border-right:1px solid var(--cis-line);}.stat-bar{align-items:flex-start;flex-direction:column;gap:5px;}.stat-items{justify-content:flex-start;}.grp-chips{display:none;}.grp-name{font-size:.9em;}}
 </style>
-<div id="cis-app" class="{$appClass}">
+<div id="cis-app" class="{$appClass}" data-cis-layout-key="{$layoutKey}">
   <div class="cis-head"><div class="cis-head-main"><span class="cis-head-icon" aria-hidden="true">⌂</span><div><div class="cis-kicker">Central Info Screen</div><div class="cis-title">Hausübersicht</div></div></div><div class="cis-head-meta"><span class="cis-live-dot" aria-hidden="true"></span><span>Live-Übersicht</span></div></div>
   <div id="cis-content">{$content}</div>
   <div id="cis-footer" class="footer">{$safeFooter}</div>
 </div>
 <script>
 (function(){
+  var app=document.getElementById('cis-app');
   var collapsedGroups=Object.create(null);
+  var layoutKey=app?app.getAttribute('data-cis-layout-key')||'':'';
   function rememberCollapsed(){document.querySelectorAll('[data-cis-group]').forEach(function(group){collapsedGroups[group.getAttribute('data-cis-group')]=group.classList.contains('is-collapsed');});}
+  function prepareLayout(nextKey){if(typeof nextKey!=='string'||nextKey==='')return false;var changed=layoutKey!==nextKey;layoutKey=nextKey;if(changed)collapsedGroups=Object.create(null);return changed;}
   function setGroupCollapsed(group,collapsed){group.classList.toggle('is-collapsed',collapsed);var toggle=group.querySelector('[data-cis-toggle]');if(toggle)toggle.setAttribute('aria-expanded',collapsed?'false':'true');}
   function restoreCollapsed(){document.querySelectorAll('[data-cis-group]').forEach(function(group){var key=group.getAttribute('data-cis-group');if(collapsedGroups[key])setGroupCollapsed(group,true);});}
   function replacePart(id,html){var current=document.getElementById(id);if(!current||typeof html!=='string')return;var wasCollapsed=current.classList.contains('is-collapsed');var template=document.createElement('template');template.innerHTML=html.trim();var replacement=template.content.firstElementChild;if(!replacement)return;current.replaceWith(replacement);if(wasCollapsed)setGroupCollapsed(replacement,true);}
   document.addEventListener('click',function(event){var action=event.target.closest?event.target.closest('[data-cis-action]'):null;if(action){if(action.getAttribute('data-cis-confirm')==='1'&&!window.confirm(action.getAttribute('data-cis-confirm-text')||'Aktion ausfuehren?'))return;var ident=action.getAttribute('data-cis-action');var value=action.getAttribute('data-cis-value')||'';if(typeof requestAction==='function')requestAction(ident,value);return;}var toggle=event.target.closest?event.target.closest('[data-cis-toggle]'):null;if(!toggle)return;var group=document.getElementById('cis-group-'+toggle.getAttribute('data-cis-toggle'));if(!group)return;var collapsed=!group.classList.contains('is-collapsed');collapsedGroups[toggle.getAttribute('data-cis-toggle')]=collapsed;setGroupCollapsed(group,collapsed);});
-  window.handleMessage=function(data){try{var d=typeof data==='string'?JSON.parse(data):data;var content=document.getElementById('cis-content');var footer=document.getElementById('cis-footer');if(d&&d.type==='full'&&d.content!==undefined&&content){rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.type==='delta'&&d.parts){if(d.parts.outdoor!==undefined)replacePart('cis-outdoor',d.parts.outdoor);if(d.parts.globalStatus!==undefined)replacePart('cis-global-status',d.parts.globalStatus);if(d.parts.groups)Object.keys(d.parts.groups).forEach(function(key){replacePart('cis-group-'+key,d.parts.groups[key]);});}if(d&&!d.type&&d.content!==undefined&&content){rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.footer!==undefined&&footer)footer.textContent=d.footer;}catch(e){console.warn('Central Info Screen: ungültige Aktualisierungsdaten',e);}};
-})();
-</script>
+  window.handleMessage=function(data){try{var d=typeof data==='string'?JSON.parse(data):data;var content=document.getElementById('cis-content');var footer=document.getElementById('cis-footer');if(d&&d.type==='full'&&d.content!==undefined&&content){var layoutChanged=prepareLayout(d.layoutKey);if(!layoutChanged)rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.type==='delta'&&d.parts){if(d.parts.outdoor!==undefined)replacePart('cis-outdoor',d.parts.outdoor);if(d.parts.globalStatus!==undefined)replacePart('cis-global-status',d.parts.globalStatus);if(d.parts.groups)Object.keys(d.parts.groups).forEach(function(key){replacePart('cis-group-'+key,d.parts.groups[key]);});}if(d&&!d.type&&d.content!==undefined&&content){var layoutChanged=prepareLayout(d.layoutKey);if(!layoutChanged)rememberCollapsed();content.innerHTML=d.content;restoreCollapsed();}if(d&&d.footer!==undefined&&footer)footer.textContent=d.footer;}catch(e){console.warn('Central Info Screen: ungueltige Aktualisierungsdaten',e);}};
+})();</script>
 HTML;
     }
     // -------------------------------------------------------------------------
