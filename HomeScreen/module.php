@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 class HomeScreen extends IPSModuleStrict
 {
-    private const MODULE_VERSION = '2.0.0-beta.3';
+    private const MODULE_VERSION = '2.0.0-beta.4';
     private const UPDATE_DEBOUNCE_MS = 250;
     private const TREND_PRIMARY_SECONDS = 2 * 3600;
     private const TREND_FALLBACK_SECONDS = 6 * 3600;
@@ -214,8 +214,8 @@ class HomeScreen extends IPSModuleStrict
 
     public function Refresh(): void
     {
-        // Das Intervall dient nur noch der Uhrzeit/Fallback-Pflege. Werte kommen ereignisgesteuert.
-        $this->SendVisualizationUpdate($this->GetUpdatePayload(false, [], false));
+        // Der Timer rendert alle dynamischen Bereiche erneut, falls VM_UPDATE-Meldungen ausbleiben.
+        $this->SendVisualizationUpdate($this->GetUpdatePayload(false, [], true));
     }
 
     public function ForceUpdate(): void

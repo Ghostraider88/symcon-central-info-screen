@@ -1,3 +1,8 @@
+## 2.0.0-beta.4 - Reliable refresh fallback
+
+- The configured refresh timer renders all dynamic sections again as a fallback.
+- Event-driven partial updates remain in place for fast changes.
+
 ## 2.0.0-beta.2 - Kompakter Start und Schnellzugriffe
 
 - Kompakter Startmodus blendet redundanten Modul-Header, Footer und normalen Alles-in-Ordnung-Status aus.
